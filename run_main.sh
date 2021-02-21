@@ -1,8 +1,14 @@
-python main.py --status train \
-		--train ../data/onto4ner.cn/train.char.bmes \
-		--dev ../data/onto4ner.cn/dev.char.bmes \
-		--test ../data/onto4ner.cn/test.char.bmes \
-		--savemodel ../data/onto4ner.cn/saved_model \
+dataset=$3
+PYTHONIOENCODING=utf-8 \
+CUDA_VISIBLE_DEVICES=$1 \
+python main.py --status $2 \
+    --dataset $dataset \
+		--train ./data/$dataset/train.char.bmes \
+		--dev ./data/$dataset/dev.char.bmes \
+		--test ./data/$dataset/test.char.bmes \
+		--savemodel ./$dataset/saved_model \
+		--savedset ./$dataset/saved_model.dset \
+		--loadmodel $dataset/saved_model.66.model
 
 
 # python main.py --status decode \
