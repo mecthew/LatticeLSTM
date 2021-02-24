@@ -80,6 +80,13 @@ class Data:
         self.HP_clip = 5.0
         self.HP_momentum = 0
 
+        # modify start
+        self.span_label_alphabet = Alphabet('span_label', True)
+        self.attr_label_alphabet = Alphabet('attr_label', True)
+        self.span_label_size = 0
+        self.attr_label_size = 0
+        # modify end
+
         
     def show_data_summary(self):
         print("DATA SUMMARY START:")
@@ -163,6 +170,11 @@ class Data:
                 label = pairs[-1]
                 self.label_alphabet.add(label)
                 self.word_alphabet.add(word)
+                # modify start
+                self.span_label_alphabet.add(label[0])
+                self.attr_label_alphabet.add(label[2:])
+                # modify end
+
                 if idx < len(in_lines) - 1 and len(in_lines[idx+1]) > 2:
                     biword = word + in_lines[idx+1].strip().split()[0].decode('utf-8')
                 else:
@@ -174,6 +186,10 @@ class Data:
         self.biword_alphabet_size = self.biword_alphabet.size()
         self.char_alphabet_size = self.char_alphabet.size()
         self.label_alphabet_size = self.label_alphabet.size()
+        # modify start
+        self.span_label_size = self.span_label_alphabet.size()
+        self.attr_label_size = self.attr_label_alphabet.size()
+        # modify end
         startS = False
         startB = False
         for label,_ in self.label_alphabet.iteritems():
