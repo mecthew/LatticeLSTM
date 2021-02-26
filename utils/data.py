@@ -17,7 +17,7 @@ PADDING = "</pad>"
 NULLKEY = "-null-"
 
 class Data:
-    def __init__(self): 
+    def __init__(self, new_tag_scheme):
         self.MAX_SENTENCE_LENGTH = 250
         self.MAX_WORD_LENGTH = -1
         self.number_normalized = True
@@ -33,6 +33,7 @@ class Data:
         # self.char_alphabet.add(UNKNOWN)
         # self.char_alphabet.add(PADDING)
         self.label_alphabet = Alphabet('label', True)
+        self.label_alphabet.add('O')    # 'O' of index 0 for padding
         self.gaz_lower = False
         self.gaz = Gazetteer(self.gaz_lower)
         self.gaz_alphabet = Alphabet('gaz')
@@ -86,7 +87,7 @@ class Data:
         self.span_label_size = 0
         self.attr_label_size = 0
         # modify end
-
+        self.new_tag_scheme = new_tag_scheme
         
     def show_data_summary(self):
         print("DATA SUMMARY START:")
@@ -126,6 +127,7 @@ class Data:
         print("     Hyperpara     use_gaz: %s"%(self.HP_use_gaz))
         print("     Hyperpara fix gaz emb: %s"%(self.HP_fix_gaz_emb))
         print("     Hyperpara    use_char: %s"%(self.HP_use_char))
+        print("     Hyperpara    new_tag_scheme: %s"%(self.new_tag_scheme))
         if self.HP_use_char:
             print("             Char_features: %s"%(self.char_features))
         print("DATA SUMMARY END.")
@@ -261,13 +263,17 @@ class Data:
     def generate_instance(self, input_file, name):
         self.fix_alphabet()
         if name == "train":
-            self.train_texts, self.train_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.train_texts, self.train_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                                 self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "dev":
-            self.dev_texts, self.dev_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.dev_texts, self.dev_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                             self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "test":
-            self.test_texts, self.test_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.test_texts, self.test_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                               self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "raw":
-            self.raw_texts, self.raw_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.raw_texts, self.raw_Ids = read_seg_instance(input_file, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                             self.number_normalized, self.MAX_SENTENCE_LENGTH)
         else:
             print("Error: you can only generate train/dev/test instance! Illegal input:%s"%(name))
 
@@ -275,13 +281,17 @@ class Data:
     def generate_instance_with_gaz(self, input_file, name):
         self.fix_alphabet()
         if name == "train":
-            self.train_texts, self.train_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.train_texts, self.train_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                                      self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "dev":
-            self.dev_texts, self.dev_Ids = read_instance_with_gaz(input_file, self.gaz,self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.dev_texts, self.dev_Ids = read_instance_with_gaz(input_file, self.gaz,self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                                  self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "test":
-            self.test_texts, self.test_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.test_texts, self.test_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet, self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                                    self.number_normalized, self.MAX_SENTENCE_LENGTH)
         elif name == "raw":
-            self.raw_texts, self.raw_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet,self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.number_normalized, self.MAX_SENTENCE_LENGTH)
+            self.raw_texts, self.raw_Ids = read_instance_with_gaz(input_file, self.gaz, self.word_alphabet,self.biword_alphabet, self.char_alphabet, self.gaz_alphabet,  self.label_alphabet, self.span_label_alphabet, self.attr_label_alphabet,
+                                                                  self.number_normalized, self.MAX_SENTENCE_LENGTH)
         else:
             print("Error: you can only generate train/dev/test instance! Illegal input:%s"%(name))
 

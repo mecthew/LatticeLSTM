@@ -7,6 +7,7 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 class PLE(nn.Module):
@@ -39,6 +40,7 @@ class PLE(nn.Module):
         self.layers_experts_shared_gate = nn.ModuleList()
         self.layers_experts_task1_gate = nn.ModuleList()
         self.layers_experts_task2_gate = nn.ModuleList()
+        self.dropout = nn.Dropout(0.5)
         for i in range(experts_layers):
             # experts shared
             self.layers_experts_shared.append(nn.Linear(hidden_size, hidden_size * experts_num))        
@@ -63,15 +65,15 @@ class PLE(nn.Module):
         shape = gate_shared_output_final.size()
         for i in range(self.experts_layers):
             # shared  output
-            experts_shared_output = torch.relu(self.layers_experts_shared[i](gate_shared_output_final))
+            experts_shared_output = F.relu(self.layers_experts_shared[i](gate_shared_output_final))
             experts_shared_output = experts_shared_output.contiguous().view(*(shape + (self.experts_num, )))
 
             # task1 output
-            experts_task1_output = torch.relu(self.layers_experts_task1[i](gate_task1_output_final))
+            experts_task1_output = F.relu(self.layers_experts_task1[i](gate_task1_output_final))
             experts_task1_output = experts_task1_output.contiguous().view(*(shape + (self.experts_num, )))
 
             # task2 output
-            experts_task2_output = torch.relu(self.layers_experts_task2[i](gate_task2_output_final))
+            experts_task2_output = F.relu(self.layers_experts_task2[i](gate_task2_output_final))
             experts_task2_output = experts_task2_output.contiguous().view(*(shape + (self.experts_num, )))
 
             # gate shared output

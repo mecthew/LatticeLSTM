@@ -6,10 +6,9 @@ python main.py --status $2 \
 		--train ./data/$dataset/train.char.bmes \
 		--dev ./data/$dataset/dev.char.bmes \
 		--test ./data/$dataset/test.char.bmes \
-		--savemodel ./$dataset/saved_model \
-		--savedset ./$dataset/saved_model.dset \
-		--loadmodel $dataset/saved_model.66.model
-
+		--savemodel ./data/ckpt/$dataset/saved_model \
+		--epochs 100 \
+		--new_tag_scheme 1
 
 # python main.py --status decode \
 # 		--raw ../data/onto4ner.cn/test.char.bmes \

@@ -8,11 +8,10 @@ import argparse
 import cPickle as pickle
 import copy
 import gc
+import os
 import random
 import sys
 import time
-import os
-import codecs
 
 import numpy as np
 import torch
@@ -20,10 +19,13 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.optim as optim
 
+from model.bilstm_ple_crf import BiLSTM_CRF as PleSeqModel
 from model.bilstmcrf import BiLSTM_CRF as SeqModel
+from utils.data import ATTR_NULLKEY
 from utils.data import Data
+from utils.extract_entity import extract_kvpairs_in_bmoes
+from utils.extract_entity import extract_kvpairs_by_start_end
 from utils.metric import get_ner_fmeasure
-from utils.extract_entity import extract_kvpairs_in_bmoes, extract_kvpairs_in_bio
 
 seed_num = 100
 random.seed(seed_num)
@@ -90,6 +92,42 @@ def recover_label(pred_variable, gold_variable, mask_variable, label_alphabet, w
     return pred_label, gold_label
 
 
+def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, attr_label_alphabet, tagscheme, gpu=True):
+    batch_size = attr_start_pred.size(0)
+    seq_len = attr_start_pred.size(1)
+    attr_start_pred_tag = attr_start_pred.cpu().data.numpy()
+    attr_end_pred_tag = attr_end_pred.cpu().data.numpy()
+    pred_label = []
+    for idx in range(batch_size):
+        attr_start_seq, attr_end_seq = attr_start_pred_tag[idx], attr_end_pred_tag[idx]
+        _fake_words = ['null'] * attr_start_seq.shape[0]
+        pairs = extract_kvpairs_by_start_end(attr_start_seq, attr_end_seq, _fake_words, attr_label_alphabet.get_index(ATTR_NULLKEY))
+        ner_seqs = ['O'] * seq_len
+        for pair in pairs:
+            spos, epos, attr, _ = pair
+            attr_name = attr_label_alphabet.get_instance(attr)
+            if tagscheme == 'BMES':
+                if epos - spos == 1:
+                    ner_seqs[spos] = 'S-' + attr_name
+                else:
+                    ner_seqs[spos] = 'B-' + attr_name
+                    ner_seqs[epos-1] = 'E-' + attr_name
+                    ner_seqs[spos+1: epos-1] = ['M-' + attr_name] * (epos - spos - 2)
+            elif tagscheme == 'BIO':
+                if epos - spos == 1:
+                    ner_seqs[spos] = 'B-' + attr_name
+                else:
+                    ner_seqs[spos] = 'B-' + attr_name
+                    ner_seqs[spos+1: epos-1] = ['I-' + attr_name] * (epos - spos - 2)
+            else:
+                raise ValueError('Unknown tagscheme: {}!'.format(tagscheme))
+        pred_label.append([label_alphabet.get_index(_tag) for _tag in ner_seqs])
+    pred_variable = autograd.Variable(torch.LongTensor(pred_label), volatile=True)
+    if gpu:
+        pred_variable = pred_variable.cuda()
+    return pred_variable
+
+
 def save_data_setting(data, save_file):
     new_data = copy.deepcopy(data)
     ## remove input instances
@@ -124,7 +162,7 @@ def lr_decay(optimizer, epoch, decay_rate, init_lr):
     return optimizer
 
 
-def evaluate(data, model, name):
+def evaluate(data, model, name, new_tag_scheme):
     if name == "train":
         instances = data.train_Ids
     elif name == "dev":
@@ -153,11 +191,29 @@ def evaluate(data, model, name):
         instance = instances[start:end]
         if not instance:
             continue
-        gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen, batch_charrecover, batch_label, mask = batchify_with_label(
-            instance, data.HP_gpu, True)
-        tag_seq = model(gaz_list, batch_word, batch_biword, batch_wordlen, batch_char, batch_charlen, batch_charrecover,
-                        mask)
-        # print "tag:",tag_seq
+        gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen,\
+            batch_charrecover, batch_label, mask, batch_span_label, batch_attr_start_label, batch_attr_end_label \
+            = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
+                                  data.attr_label_alphabet.get_index(ATTR_NULLKEY), True)
+        if new_tag_scheme:
+            _, span_tag_seq, attr_start_output, attr_end_output \
+                = model.neg_log_likelihood_loss(gaz_list,
+                                                batch_word,
+                                                batch_biword,
+                                                batch_wordlen,
+                                                batch_char,
+                                                batch_charlen,
+                                                batch_charrecover,
+                                                batch_span_label,
+                                                batch_attr_start_label,
+                                                batch_attr_end_label,
+                                                mask)
+            tag_seq = convert_attr_seq_to_ner_seq(attr_start_output, attr_end_output, data.label_alphabet,
+                                                  data.attr_label_alphabet, data.tagScheme)
+        else:
+            tag_seq = model(gaz_list, batch_word, batch_biword, batch_wordlen, batch_char, batch_charlen, batch_charrecover,
+                            mask)
+            # print "tag:",tag_seq
         pred_label, gold_label = recover_label(tag_seq, batch_label, mask, data.label_alphabet, batch_wordrecover)
         pred_results += pred_label
         gold_results += gold_label
@@ -167,7 +223,7 @@ def evaluate(data, model, name):
     return speed, acc, p, r, f, pred_results
 
 
-def batchify_with_label(input_batch_list, gpu, volatile_flag=False):
+def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, volatile_flag=False):
     """
         input: list of words, chars and labels, various length. [[words,biwords,chars,gaz, labels],[words,biwords,chars,labels],...]
             words: word ids for one sentence. (batch_size, sent_len) 
@@ -188,22 +244,37 @@ def batchify_with_label(input_batch_list, gpu, volatile_flag=False):
     chars = [sent[2] for sent in input_batch_list]
     gazs = [sent[3] for sent in input_batch_list]
     labels = [sent[4] for sent in input_batch_list]
+    span_labels = [sent[5] for sent in input_batch_list]
+    attr_start_labels = [sent[6] for sent in input_batch_list]
+    attr_end_labels = [sent[7] for sent in input_batch_list]
     word_seq_lengths = torch.LongTensor(map(len, words))
     max_seq_len = word_seq_lengths.max()
     word_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
     biword_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
     label_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
+    span_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(span_label_pad),
+                                              volatile=volatile_flag).long()
+    attr_start_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(attr_label_pad),
+                                                    volatile=volatile_flag).long()
+    attr_end_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(attr_label_pad),
+                                                  volatile=volatile_flag).long()
     mask = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).byte()
     for idx, (seq, biseq, label, seqlen) in enumerate(zip(words, biwords, labels, word_seq_lengths)):
         word_seq_tensor[idx, :seqlen] = torch.LongTensor(seq)
         biword_seq_tensor[idx, :seqlen] = torch.LongTensor(biseq)
         label_seq_tensor[idx, :seqlen] = torch.LongTensor(label)
+        span_label_seq_tensor[idx, :seqlen] = torch.LongTensor(span_labels)
+        attr_start_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_start_labels)
+        attr_end_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_end_labels)
         mask[idx, :seqlen] = torch.Tensor([1] * seqlen)
     word_seq_lengths, word_perm_idx = word_seq_lengths.sort(0, descending=True)
     word_seq_tensor = word_seq_tensor[word_perm_idx]
     biword_seq_tensor = biword_seq_tensor[word_perm_idx]
     ## not reorder label
     label_seq_tensor = label_seq_tensor[word_perm_idx]
+    span_label_seq_tensor = span_label_seq_tensor[word_perm_idx]
+    attr_start_label_seq_tensor = attr_start_label_seq_tensor[word_perm_idx]
+    attr_end_label_seq_tensor = attr_end_label_seq_tensor[word_perm_idx]
     mask = mask[word_perm_idx]
     ### deal with char
     # pad_chars (batch_size, max_seq_len)
@@ -236,22 +307,28 @@ def batchify_with_label(input_batch_list, gpu, volatile_flag=False):
         label_seq_tensor = label_seq_tensor.cuda()
         char_seq_tensor = char_seq_tensor.cuda()
         char_seq_recover = char_seq_recover.cuda()
+        span_label_seq_tensor = span_label_seq_tensor.cuda()
+        attr_start_label_seq_tensor = attr_start_label_seq_tensor.cuda()
+        attr_end_label_seq_tensor = attr_end_label_seq_tensor.cuda()
         mask = mask.cuda()
-    return gaz_list, word_seq_tensor, biword_seq_tensor, word_seq_lengths, word_seq_recover, char_seq_tensor, char_seq_lengths, char_seq_recover, label_seq_tensor, mask
+    return gaz_list, word_seq_tensor, biword_seq_tensor, word_seq_lengths, word_seq_recover, char_seq_tensor, char_seq_lengths, char_seq_recover, label_seq_tensor, mask, \
+           span_label_seq_tensor, attr_start_label_seq_tensor, attr_end_label_seq_tensor
 
 
-def train(data, save_model_dir, seg=True):
+def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_scheme=False):
     print "Training model..."
     data.show_data_summary()
-    save_data_name = save_model_dir + ".dset"
-    save_data_setting(data, save_data_name)
-    model = SeqModel(data)
+    save_data_setting(data, save_dset_path)
+    if new_tag_scheme:  # 使用多任务标注方案
+        model = PleSeqModel(data)
+    else:
+        model = SeqModel(data)
     print "finished built model."
     loss_function = nn.NLLLoss()
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.SGD(parameters, lr=data.HP_lr, momentum=data.HP_momentum)
     best_dev = -1
-    data.HP_iteration = 100
+    data.HP_iteration = epochs
     ## start training
     for idx in range(data.HP_iteration):
         epoch_start = time.time()
@@ -281,13 +358,38 @@ def train(data, save_model_dir, seg=True):
             instance = data.train_Ids[start:end]
             if not instance:
                 continue
-            gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen, batch_charrecover, batch_label, mask = batchify_with_label(
-                instance, data.HP_gpu)
+            gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen, batch_charrecover, batch_label, mask, \
+                batch_span_label, batch_attr_start_label, batch_attr_end_label \
+                = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
+                                      data.attr_label_alphabet.get_index(ATTR_NULLKEY))
             # print "gaz_list:",gaz_list
             # exit(0)
             instance_count += 1
-            loss, tag_seq = model.neg_log_likelihood_loss(gaz_list, batch_word, batch_biword, batch_wordlen, batch_char,
-                                                          batch_charlen, batch_charrecover, batch_label, mask)
+            if new_tag_scheme:
+                loss, span_tag_seq, attr_start_output, attr_end_output \
+                    = model.neg_log_likelihood_loss(gaz_list,
+                                                    batch_word,
+                                                    batch_biword,
+                                                    batch_wordlen,
+                                                    batch_char,
+                                                    batch_charlen,
+                                                    batch_charrecover,
+                                                    batch_span_label,
+                                                    batch_attr_start_label,
+                                                    batch_attr_end_label,
+                                                    mask)
+                tag_seq = convert_attr_seq_to_ner_seq(attr_start_output, attr_end_output, data.label_alphabet,
+                                                      data.attr_label_alphabet, data.tagScheme)
+            else:
+                loss, tag_seq = model.neg_log_likelihood_loss(gaz_list,
+                                                              batch_word,
+                                                              batch_biword,
+                                                              batch_wordlen,
+                                                              batch_char,
+                                                              batch_charlen,
+                                                              batch_charrecover,
+                                                              batch_label,
+                                                              mask)
             right, whole = predict_check(tag_seq, batch_label, mask)
             right_token += right
             whole_token += whole
@@ -318,7 +420,7 @@ def train(data, save_model_dir, seg=True):
             idx, epoch_cost, train_num / epoch_cost, total_loss))
         # exit(0)
         # continue
-        speed, acc, p, r, f, _ = evaluate(data, model, "dev")
+        speed, acc, p, r, f, _ = evaluate(data, model, "dev", new_tag_scheme)
         dev_finish = time.time()
         dev_cost = dev_finish - epoch_finish
 
@@ -339,7 +441,7 @@ def train(data, save_model_dir, seg=True):
             torch.save(model.state_dict(), model_name)
             best_dev = current_score
             # ## decode test
-        speed, acc, p, r, f, _ = evaluate(data, model, "test")
+        speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
         test_finish = time.time()
         test_cost = test_finish - dev_finish
         if seg:
@@ -353,7 +455,10 @@ def train(data, save_model_dir, seg=True):
 def load_model_decode(model_dir, data, name, gpu, seg=True):
     data.HP_gpu = gpu
     print "Load Model from file: ", model_dir
-    model = SeqModel(data)
+    if data.new_tag_scheme:
+        model = PleSeqModel(data)
+    else:
+        model = SeqModel(data)
     ## load model need consider if the model trained in GPU and load in CPU, or vice versa
     # if not gpu:
     #     model.load_state_dict(torch.load(model_dir, map_location=lambda storage, loc: storage))
@@ -364,7 +469,7 @@ def load_model_decode(model_dir, data, name, gpu, seg=True):
 
     print("Decode %s data ..." % (name))
     start_time = time.time()
-    speed, acc, p, r, f, pred_results = evaluate(data, model, name)
+    speed, acc, p, r, f, pred_results = evaluate(data, model, name, data.new_tag_scheme)
     end_time = time.time()
     time_cost = end_time - start_time
     if seg:
@@ -380,7 +485,7 @@ if __name__ == '__main__':
     parser.add_argument('--embedding', help='Embedding for words', default='None')
     parser.add_argument('--status', choices=['train', 'test', 'decode'], help='update algorithm', default='train')
     parser.add_argument('--savemodel', default="data/model/saved_model.lstmcrf.")
-    parser.add_argument('--savedset', help='Dir of saved data setting', default="data/save.dset")
+    parser.add_argument('--savedset', help='Dir of saved data setting')
     parser.add_argument('--train', default="data/conll03/train.bmes")
     parser.add_argument('--dev', default="data/conll03/dev.bmes")
     parser.add_argument('--test', default="data/conll03/test.bmes")
@@ -390,14 +495,16 @@ if __name__ == '__main__':
     parser.add_argument('--loadmodel')
     parser.add_argument('--output')
     parser.add_argument('--dataset')
+    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--new_tag_scheme', default=0, type=int)
     args = parser.parse_args()
 
     train_file = args.train
     dev_file = args.dev
     test_file = args.test
     raw_file = args.raw
-    model_dir = args.loadmodel
-    dset_dir = args.savedset
+    load_model_dir = args.loadmodel
+    dset_dir = args.savedset if args.savedset else "data/{}.dset".format(args.dataset)
     output_file = args.output
     if args.seg.lower() == "true":
         seg = True
@@ -407,6 +514,10 @@ if __name__ == '__main__':
 
     save_model_dir = args.savemodel
     gpu = torch.cuda.is_available()
+    # if not os.path.exists('./data/ckpt'):
+    #     os.makedirs('./data/ckpt')
+    if not os.path.exists(save_model_dir):
+        os.makedirs(save_model_dir)
 
     char_emb = "data/gigaword_chn.all.a2b.uni.11k.50d.vec"
     bichar_emb = None
@@ -432,7 +543,7 @@ if __name__ == '__main__':
     sys.stdout.flush()
 
     if status == 'train':
-        data = Data()
+        data = Data(args.new_tag_scheme)
         data.HP_gpu = gpu
         data.HP_use_char = False
         data.HP_batch_size = 1
@@ -447,13 +558,13 @@ if __name__ == '__main__':
         data.build_word_pretrain_emb(char_emb)
         data.build_biword_pretrain_emb(bichar_emb)
         data.build_gaz_pretrain_emb(gaz_file)
-        train(data, save_model_dir, seg)
+        train(data, save_model_dir, dset_dir, seg, epochs=args.epochs, new_tag_scheme=args.new_tag_scheme)
     elif status == 'test':
         data = load_data_setting(dset_dir)
         # data.generate_instance_with_gaz(dev_file, 'dev')
         # load_model_decode(model_dir, data, 'dev', gpu, seg)
         data.generate_instance_with_gaz(test_file, 'test')
-        test_preds = load_model_decode(model_dir, data, 'test', gpu, seg)
+        test_preds = load_model_decode(load_model_dir, data, 'test', gpu, seg)
         test_texts = data.test_texts
         words = [instance[0] for instance in test_texts]
         labels = [instance[4] for instance in test_texts]
@@ -479,7 +590,7 @@ if __name__ == '__main__':
     elif status == 'decode':
         data = load_data_setting(dset_dir)
         data.generate_instance_with_gaz(raw_file, 'raw')
-        decode_results = load_model_decode(model_dir, data, 'raw', gpu, seg)
+        decode_results = load_model_decode(load_model_dir, data, 'raw', gpu, seg)
         data.write_decoded_results(output_file, decode_results, 'raw')
     else:
         print "Invalid argument! Please use valid arguments! (train/test/decode)"
