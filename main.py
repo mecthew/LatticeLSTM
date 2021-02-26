@@ -470,10 +470,10 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
         gc.collect()
 
 
-def load_model_decode(model_dir, data, name, gpu, seg=True):
+def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False):
     data.HP_gpu = gpu
     print("Load Model from file: ", model_dir)
-    if data.new_tag_scheme:
+    if new_tag_scheme:
         model = PleSeqModel(data)
     else:
         model = SeqModel(data)
@@ -483,11 +483,12 @@ def load_model_decode(model_dir, data, name, gpu, seg=True):
     #     # model = torch.load(model_dir, map_location=lambda storage, loc: storage)
     # else:
     model.load_state_dict(torch.load(model_dir))
+    model.to(device)
     # model = torch.load(model_dir)
 
     print(("Decode %s data ..." % (name)))
     start_time = time.time()
-    speed, acc, p, r, f, pred_results = evaluate(data, model, name, data.new_tag_scheme)
+    speed, acc, p, r, f, pred_results = evaluate(data, model, name, new_tag_scheme)
     end_time = time.time()
     time_cost = end_time - start_time
     if seg:
@@ -583,7 +584,7 @@ if __name__ == '__main__':
         # data.generate_instance_with_gaz(dev_file, 'dev')
         # load_model_decode(model_dir, data, 'dev', gpu, seg)
         data.generate_instance_with_gaz(test_file, 'test')
-        test_preds = load_model_decode(load_model_dir, data, 'test', gpu, seg)
+        test_preds = load_model_decode(load_model_dir, data, 'test', gpu, seg, new_tag_scheme=args.new_tag_scheme)
         test_texts = data.test_texts
         words = [instance[0] for instance in test_texts]
         labels = [instance[4] for instance in test_texts]
@@ -592,19 +593,12 @@ if __name__ == '__main__':
         for word_seq, gold_seq, pred_seq in zip(words, labels, test_preds):
             gold_pair = extract_kvpairs_in_bmoes(gold_seq, word_seq)
             pred_pair = extract_kvpairs_in_bmoes(pred_seq, word_seq)
-            gold_pair = ["({}, {}, {})".format(p[0], p[1], p[2]) for p in gold_pair]
-            pred_pair = ["({}, {}, {})".format(p[0], p[1], p[2]) for p in pred_pair]
-            gold_pair_str = "[" + ", ".join(gold_pair) + "]"
-            pred_pair_str = "[" + ", ".join(pred_pair) + "]"
-
-            case_result.append((''.join(word_seq), gold_pair_str, pred_pair_str))
-        if not os.path.exists('./case_study'):
-            os.makedirs('./case_study')
-        case_fout = open('./case_study/{}_latticelstm.casestudy'.format(args.dataset), 'wb')
+            case_result.append((''.join(word_seq), str(gold_pair), str(pred_pair)))
+            
+        os.makedirs('./case_study', exist_ok=True)
+        case_fout = open('./case_study/{}_latticelstm.casestudy'.format(args.dataset), 'w')
         for word_seq, gold_pair, pred_pair in case_result:
-            case_fout.write(word_seq.encode('utf8') + '\n'
-                            + gold_pair.encode('utf8') + '\n'
-                            + pred_pair.encode('utf8') + '\n\n')
+            case_fout.write(word_seq + '\n' + gold_pair + '\n' + pred_pair + '\n\n')
 
     elif status == 'decode':
         data = load_data_setting(dset_dir)
