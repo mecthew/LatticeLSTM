@@ -33,13 +33,14 @@ class BiLSTM_CRF(nn.Module):
 
 
     def neg_log_likelihood_loss(self, gaz_list, word_inputs, biword_inputs, word_seq_lengths, char_inputs, char_seq_lengths, char_seq_recover, span_labels, attr_start_labels, attr_end_labels, mask):
+        shape = word_inputs.size()
         span_logits, attr_start_logits, attr_end_logits = self.forward(gaz_list, word_inputs, biword_inputs, word_seq_lengths, char_inputs, char_seq_lengths, char_seq_recover)
         inputs_seq_len = mask.sum(dim=-1).float()
         span_loss = self.span_crf.neg_log_likelihood_loss(span_logits, mask, span_labels)
         scores, span_tag_seq = self.span_crf._viterbi_decode(span_logits, mask)
-        attr_start_loss = self.attr_criterion(attr_start_logits.permute(0, 2, 1).unsqueeze(-1), attr_start_labels.unsqueeze(-1)).squeeze(-1) # B * S
+        attr_start_loss = self.attr_criterion(attr_start_logits.contiguous().view(shape[0] * shape[1], -1), attr_start_labels.contiguous().view(shape[0] * shape[1])).contiguous().view(shape[0], shape[1]) # B * S
         attr_start_loss = torch.sum(attr_start_loss * mask.float(), dim=-1).float() / inputs_seq_len # B
-        attr_end_loss = self.attr_criterion(attr_end_logits.permute(0, 2, 1).unsqueeze(-1), attr_end_labels.unsqueeze(-1)).squeeze(-1)  # B * S
+        attr_end_loss = self.attr_criterion(attr_end_logits.contiguous().view(shape[0] * shape[1], -1), attr_end_labels.contiguous().view(shape[0] * shape[1])).contiguous().view(shape[0], shape[1])  # B * S
         attr_end_loss = torch.sum(attr_end_loss * mask.float(), dim=-1).float() / inputs_seq_len # B
         attr_start_loss, attr_end_loss = attr_start_loss.mean(), attr_end_loss.mean()
         total_loss = (span_loss + attr_start_loss + attr_end_loss) / 3
