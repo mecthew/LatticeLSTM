@@ -34,13 +34,13 @@ class WordLSTMCell(nn.Module):
         """
         Initialize parameters following the way proposed in the paper.
         """
-        init.orthogonal(self.weight_ih.data)
+        init.orthogonal_(self.weight_ih.data)
         weight_hh_data = torch.eye(self.hidden_size)
         weight_hh_data = weight_hh_data.repeat(1, 3)
         self.weight_hh.data.set_(weight_hh_data)
         # The bias is just set to zero vectors.
         if self.use_bias:
-            init.constant(self.bias.data, val=0)
+            init.constant_(self.bias.data, val=0)
 
     def forward(self, input_, hx):
         """
@@ -101,8 +101,8 @@ class MultiInputLSTMCell(nn.Module):
         """
         Initialize parameters following the way proposed in the paper.
         """
-        init.orthogonal(self.weight_ih.data)
-        init.orthogonal(self.alpha_weight_ih.data)
+        init.orthogonal_(self.weight_ih.data)
+        init.orthogonal_(self.alpha_weight_ih.data)
 
         weight_hh_data = torch.eye(self.hidden_size)
         weight_hh_data = weight_hh_data.repeat(1, 3)
@@ -114,8 +114,8 @@ class MultiInputLSTMCell(nn.Module):
 
         # The bias is just set to zero vectors.
         if self.use_bias:
-            init.constant(self.bias.data, val=0)
-            init.constant(self.alpha_bias.data, val=0)
+            init.constant_(self.bias.data, val=0)
+            init.constant_(self.alpha_bias.data, val=0)
 
     def forward(self, input_, c_input, hx):
         """
@@ -176,12 +176,12 @@ class LatticeLSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim, word_drop, word_alphabet_size, word_emb_dim, pretrain_word_emb=None, left2right=True, fix_word_emb=True, gpu=True,  use_bias = True):
         super(LatticeLSTM, self).__init__()
         skip_direction = "forward" if left2right else "backward"
-        print "build LatticeLSTM... ", skip_direction, ", Fix emb:", fix_word_emb, " gaz drop:", word_drop
+        print("build LatticeLSTM... ", skip_direction, ", Fix emb:", fix_word_emb, " gaz drop:", word_drop)
         self.gpu = gpu
         self.hidden_dim = hidden_dim
         self.word_emb = nn.Embedding(word_alphabet_size, word_emb_dim)
         if pretrain_word_emb is not None:
-            print "load pretrain word emb...", pretrain_word_emb.shape
+            print("load pretrain word emb...", pretrain_word_emb.shape)
             self.word_emb.weight.data.copy_(torch.from_numpy(pretrain_word_emb))
 
         else:
@@ -228,7 +228,7 @@ class LatticeLSTM(nn.Module):
                 hx = hx.cuda()
                 cx = cx.cuda()
         
-        id_list = range(seq_len)
+        id_list = list(range(seq_len))
         if not self.left2right:
             id_list = list(reversed(id_list))
         input_c_list = init_list_of_objects(seq_len)

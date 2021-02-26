@@ -33,7 +33,7 @@ def read_instance(input_file, word_alphabet, char_alphabet, label_alphabet, numb
     for line in in_lines:
         if len(line) > 2:
             pairs = line.strip().split()
-            word = pairs[0].decode('utf-8')
+            word = pairs[0]
             if number_normalized:
                 word = normalize_word(word)
             label = pairs[-1]
@@ -86,17 +86,17 @@ def read_seg_instance(input_file, word_alphabet, biword_alphabet, char_alphabet,
     char_Ids = []
     label_Ids = []
     span_labels_Ids, attr_start_labels_Ids, attr_end_labels_Ids = [], [], []
-    for idx in xrange(len(in_lines)):
+    for idx in range(len(in_lines)):
         line = in_lines[idx]
         if len(line) > 2:
             pairs = line.strip().split()
-            word = pairs[0].decode('utf-8')
+            word = pairs[0]
             if number_normalized:
                 word = normalize_word(word)
             label = pairs[-1]
             words.append(word)
             if idx < len(in_lines) - 1 and len(in_lines[idx + 1]) > 2:
-                biword = word + in_lines[idx + 1].strip().split()[0].decode('utf-8')
+                biword = word + in_lines[idx + 1].strip().split()[0]
             else:
                 biword = word + NULLKEY
             biwords.append(biword)
@@ -160,16 +160,16 @@ def read_instance_with_gaz(input_file, gaz, word_alphabet, biword_alphabet, char
     char_Ids = []
     label_Ids = []
     span_labels_Ids, attr_start_labels_Ids, attr_end_labels_Ids = [], [], []
-    for idx in xrange(len(in_lines)):
+    for idx in range(len(in_lines)):
         line = in_lines[idx]
         if len(line) > 2:
             pairs = line.strip().split()
-            word = pairs[0].decode('utf-8')
+            word = pairs[0]
             if number_normalized:
                 word = normalize_word(word)
             label = pairs[-1]
             if idx < len(in_lines) - 1 and len(in_lines[idx + 1]) > 2:
-                biword = word + in_lines[idx + 1].strip().split()[0].decode('utf-8')
+                biword = word + in_lines[idx + 1].strip().split()[0]
             else:
                 biword = word + NULLKEY
             biwords.append(biword)
@@ -252,8 +252,8 @@ def read_instance_with_gaz_in_sentence(input_file, gaz, word_alphabet, biword_al
     in_lines = open(input_file, 'r').readlines()
     instence_texts = []
     instence_Ids = []
-    for idx in xrange(len(in_lines)):
-        pair = in_lines[idx].strip().decode('utf-8').split()
+    for idx in range(len(in_lines)):
+        pair = in_lines[idx].strip().split()
         orig_words = list(pair[0])
 
         if (max_sent_length > 0) and (len(orig_words) > max_sent_length):
@@ -316,7 +316,7 @@ def build_pretrain_embedding(embedding_path, word_alphabet, embedd_dim=100, norm
     perfect_match = 0
     case_match = 0
     not_match = 0
-    for word, index in word_alphabet.iteritems():
+    for word, index in word_alphabet.items():
         if word in embedd_dict:
             if norm:
                 pretrain_emb[index, :] = norm2one(embedd_dict[word])
@@ -333,8 +333,8 @@ def build_pretrain_embedding(embedding_path, word_alphabet, embedd_dim=100, norm
             pretrain_emb[index, :] = np.random.uniform(-scale, scale, [1, embedd_dim])
             not_match += 1
     pretrained_size = len(embedd_dict)
-    print("Embedding:\n     pretrain word:%s, prefect match:%s, case_match:%s, oov:%s, oov%%:%s" % (
-    pretrained_size, perfect_match, case_match, not_match, (not_match + 0.) / word_alphabet.size()))
+    print(("Embedding:\n     pretrain word:%s, prefect match:%s, case_match:%s, oov:%s, oov%%:%s" % (
+    pretrained_size, perfect_match, case_match, not_match, (not_match + 0.) / word_alphabet.size())))
     return pretrain_emb, embedd_dim
 
 
@@ -358,11 +358,11 @@ def load_pretrain_emb(embedding_path):
                 assert (embedd_dim + 1 == len(tokens))
             embedd = np.empty([1, embedd_dim])
             embedd[:] = tokens[1:]
-            embedd_dict[tokens[0].decode('utf-8')] = embedd
+            embedd_dict[tokens[0]] = embedd
     return embedd_dict, embedd_dim
 
 
 if __name__ == '__main__':
     a = np.arange(9.0)
-    print a
-    print norm2one(a)
+    print(a)
+    print(norm2one(a))
