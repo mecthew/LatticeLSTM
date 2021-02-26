@@ -7,7 +7,7 @@ python main.py --status $2 \
 		--dev ./data/$dataset/dev.char.bmes \
 		--test ./data/$dataset/test.char.bmes \
 		--savemodel ./data/ckpt/$dataset/saved_model \
-		--epochs 100 \
+		--epochs 10 \
 		--new_tag_scheme 1
 
 # python main.py --status decode \

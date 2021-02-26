@@ -7,7 +7,10 @@ import sys
 import numpy as np
 from alphabet import Alphabet
 from functions import *
-import cPickle as pickle
+if sys.version > '3':   # python3
+    import _pickle as pickle
+else:                   # python2
+    import cPickle as pickle
 from gazetteer import Gazetteer
 
 

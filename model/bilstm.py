@@ -70,17 +70,6 @@ class BiLSTM(nn.Module):
         # The linear layer that maps from hidden state space to tag space
         self.hidden2tag = nn.Linear(data.HP_hidden_dim, data.label_alphabet_size)
 
-        if self.gpu:
-            self.drop = self.drop.cuda()
-            self.droplstm = self.droplstm.cuda()
-            self.word_embeddings = self.word_embeddings.cuda()
-            self.biword_embeddings = self.biword_embeddings.cuda()
-            self.forward_lstm = self.forward_lstm.cuda()
-            if self.bilstm_flag:
-                self.backward_lstm = self.backward_lstm.cuda()
-            self.hidden2tag = self.hidden2tag.cuda()
-
-
     def random_embedding(self, vocab_size, embedding_dim):
         pretrain_emb = np.empty([vocab_size, embedding_dim])
         scale = np.sqrt(3.0 / embedding_dim)

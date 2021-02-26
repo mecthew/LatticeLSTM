@@ -59,7 +59,7 @@ class WordLSTMCell(nn.Module):
         bias_batch = (self.bias.unsqueeze(0).expand(batch_size, *self.bias.size()))
         wh_b = torch.addmm(bias_batch, h_0, self.weight_hh)
         wi = torch.mm(input_, self.weight_ih)
-        f, i, g = torch.split(wh_b + wi, split_size=self.hidden_size, dim=1)
+        f, i, g = torch.split(wh_b + wi, self.hidden_size, dim=1)
         c_1 = torch.sigmoid(f)*c_0 + torch.sigmoid(i)*torch.tanh(g)
         return c_1
 
@@ -137,7 +137,7 @@ class MultiInputLSTMCell(nn.Module):
         bias_batch = (self.bias.unsqueeze(0).expand(batch_size, *self.bias.size()))
         wh_b = torch.addmm(bias_batch, h_0, self.weight_hh)
         wi = torch.mm(input_, self.weight_ih)
-        i, o, g = torch.split(wh_b + wi, split_size=self.hidden_size, dim=1)
+        i, o, g = torch.split(wh_b + wi, self.hidden_size, dim=1)
         i = torch.sigmoid(i)
         g = torch.tanh(g)
         o = torch.sigmoid(o)
@@ -194,11 +194,6 @@ class LatticeLSTM(nn.Module):
         self.rnn = MultiInputLSTMCell(input_dim, hidden_dim)
         self.word_rnn = WordLSTMCell(word_emb_dim, hidden_dim)
         self.left2right = left2right
-        if self.gpu:
-            self.rnn = self.rnn.cuda()
-            self.word_emb = self.word_emb.cuda()
-            self.word_dropout = self.word_dropout.cuda()
-            self.word_rnn = self.word_rnn.cuda()
 
     def random_embedding(self, vocab_size, embedding_dim):
         pretrain_emb = np.empty([vocab_size, embedding_dim])
@@ -227,8 +222,8 @@ class LatticeLSTM(nn.Module):
         if hidden:
             (hx,cx)= hidden
         else:
-            hx = autograd.Variable(torch.zeros(batch_size, self.hidden_dim))
-            cx = autograd.Variable(torch.zeros(batch_size, self.hidden_dim))
+            hx = torch.zeros(batch_size, self.hidden_dim, requires_grad=True)
+            cx = torch.zeros(batch_size, self.hidden_dim, requires_grad=True)
             if self.gpu:
                 hx = hx.cuda()
                 cx = cx.cuda()
@@ -243,7 +238,7 @@ class LatticeLSTM(nn.Module):
             memory_out.append(cx)
             if skip_input[t]:
                 matched_num = len(skip_input[t][0])
-                word_var = autograd.Variable(torch.LongTensor(skip_input[t][0]),volatile =  volatile_flag)
+                word_var = torch.LongTensor(skip_input[t][0])
                 if self.gpu:
                     word_var = word_var.cuda()
                 word_emb = self.word_emb(word_var)

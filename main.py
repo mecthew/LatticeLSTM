@@ -5,7 +5,11 @@
 # @Last Modified time: 2018-07-06 11:08:27
 
 import argparse
-import cPickle as pickle
+import sys
+if sys.version > '3':   # python3
+    import _pickle as pickle
+else:                   # python2
+    import cPickle as pickle
 import copy
 import gc
 import os
@@ -52,9 +56,9 @@ def predict_check(pred_variable, gold_variable, mask_variable):
             gold_variable (batch_size, sent_len): gold result variable
             mask_variable (batch_size, sent_len): mask variable
     """
-    pred = pred_variable.cpu().data.numpy()
-    gold = gold_variable.cpu().data.numpy()
-    mask = mask_variable.cpu().data.numpy()
+    pred = pred_variable.detach().cpu().numpy()
+    gold = gold_variable.detach().cpu().numpy()
+    mask = mask_variable.detach().cpu().numpy()
     overlaped = (pred == gold)
     right_token = np.sum(overlaped * mask)
     total_token = mask.sum()
@@ -75,9 +79,9 @@ def recover_label(pred_variable, gold_variable, mask_variable, label_alphabet, w
     mask_variable = mask_variable[word_recover]
     batch_size = gold_variable.size(0)
     seq_len = gold_variable.size(1)
-    mask = mask_variable.cpu().data.numpy()
-    pred_tag = pred_variable.cpu().data.numpy()
-    gold_tag = gold_variable.cpu().data.numpy()
+    mask = mask_variable.detach().cpu().numpy()
+    pred_tag = pred_variable.detach().cpu().numpy()
+    gold_tag = gold_variable.detach().cpu().numpy()
     batch_size = mask.shape[0]
     pred_label = []
     gold_label = []
@@ -95,8 +99,8 @@ def recover_label(pred_variable, gold_variable, mask_variable, label_alphabet, w
 def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, attr_label_alphabet, tagscheme, gpu=True):
     batch_size = attr_start_pred.size(0)
     seq_len = attr_start_pred.size(1)
-    attr_start_pred_tag = attr_start_pred.cpu().data.numpy()
-    attr_end_pred_tag = attr_end_pred.cpu().data.numpy()
+    attr_start_pred_tag = attr_start_pred.detach().cpu().numpy()
+    attr_end_pred_tag = attr_end_pred.detach().cpu().numpy()
     pred_label = []
     pred_label_text = []
     for idx in range(batch_size):
@@ -104,9 +108,9 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
         _fake_words = ['null'] * attr_start_seq.shape[0]
         pairs = extract_kvpairs_by_start_end(attr_start_seq, attr_end_seq, _fake_words, attr_label_alphabet.get_index(ATTR_NULLKEY))
         ner_seqs = ['O'] * seq_len
-        print("attr start: {}, {}".format(attr_start_seq.shape[0], [attr_label_alphabet.get_instance(at) for at in attr_start_seq]))
-        print("pairs: {}".format(pairs))
-        print("="*50, 'END')
+        # print("attr start: {}, {}".format(attr_start_seq.shape[0], [attr_label_alphabet.get_instance(at) for at in attr_start_seq]))
+        # print("pairs: {}".format(pairs))
+        # print("="*50, 'END')
         for pair in pairs:
             (spos, epos), attr, _ = pair
             attr_name = attr_label_alphabet.get_instance(attr)
@@ -125,9 +129,13 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
                     ner_seqs[spos+1: epos-1] = ['I-' + attr_name] * (epos - spos - 2)
             else:
                 raise ValueError('Unknown tagscheme: {}!'.format(tagscheme))
-        pred_label.append([label_alphabet.get_index(_tag) for _tag in ner_seqs])
+        try:
+            pred_label.append([label_alphabet.get_index(_tag) for _tag in ner_seqs])
+        except:
+            # print("Error in {}".format(ner_seqs))
+            print('Error')
         pred_label_text.append(ner_seqs)
-    pred_variable = autograd.Variable(torch.LongTensor(pred_label), volatile=True)
+    pred_variable = torch.LongTensor(pred_label)
     if gpu:
         pred_variable = pred_variable.cuda()
     return pred_variable
@@ -188,40 +196,41 @@ def evaluate(data, model, name, new_tag_scheme):
     start_time = time.time()
     train_num = len(instances)
     total_batch = train_num // batch_size + 1
-    for batch_id in range(total_batch):
-        start = batch_id * batch_size
-        end = (batch_id + 1) * batch_size
-        if end > train_num:
-            end = train_num
-        instance = instances[start:end]
-        if not instance:
-            continue
-        gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen,\
-            batch_charrecover, batch_label, mask, batch_span_label, batch_attr_start_label, batch_attr_end_label \
-            = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
-                                  data.attr_label_alphabet.get_index(ATTR_NULLKEY), True)
-        if new_tag_scheme:
-            _, span_tag_seq, attr_start_output, attr_end_output \
-                = model.neg_log_likelihood_loss(gaz_list,
-                                                batch_word,
-                                                batch_biword,
-                                                batch_wordlen,
-                                                batch_char,
-                                                batch_charlen,
-                                                batch_charrecover,
-                                                batch_span_label,
-                                                batch_attr_start_label,
-                                                batch_attr_end_label,
-                                                mask)
-            tag_seq = convert_attr_seq_to_ner_seq(attr_start_output, attr_end_output, data.label_alphabet,
-                                                  data.attr_label_alphabet, data.tagScheme)
-        else:
-            tag_seq = model(gaz_list, batch_word, batch_biword, batch_wordlen, batch_char, batch_charlen, batch_charrecover,
-                            mask)
-            # print "tag:",tag_seq
-        pred_label, gold_label = recover_label(tag_seq, batch_label, mask, data.label_alphabet, batch_wordrecover)
-        pred_results += pred_label
-        gold_results += gold_label
+    with torch.no_grad():
+        for batch_id in range(total_batch):
+            start = batch_id * batch_size
+            end = (batch_id + 1) * batch_size
+            if end > train_num:
+                end = train_num
+            instance = instances[start:end]
+            if not instance:
+                continue
+            gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen,\
+                batch_charrecover, batch_label, mask, batch_span_label, batch_attr_start_label, batch_attr_end_label \
+                = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
+                                      data.attr_label_alphabet.get_index(ATTR_NULLKEY), True)
+            if new_tag_scheme:
+                _, span_tag_seq, attr_start_output, attr_end_output \
+                    = model.neg_log_likelihood_loss(gaz_list,
+                                                    batch_word,
+                                                    batch_biword,
+                                                    batch_wordlen,
+                                                    batch_char,
+                                                    batch_charlen,
+                                                    batch_charrecover,
+                                                    batch_span_label,
+                                                    batch_attr_start_label,
+                                                    batch_attr_end_label,
+                                                    mask)
+                tag_seq = convert_attr_seq_to_ner_seq(attr_start_output, attr_end_output, data.label_alphabet,
+                                                      data.attr_label_alphabet, data.tagScheme)
+            else:
+                tag_seq = model(gaz_list, batch_word, batch_biword, batch_wordlen, batch_char, batch_charlen, batch_charrecover,
+                                mask)
+                # print "tag:",tag_seq
+            pred_label, gold_label = recover_label(tag_seq, batch_label, mask, data.label_alphabet, batch_wordrecover)
+            pred_results += pred_label
+            gold_results += gold_label
     decode_time = time.time() - start_time
     speed = len(instances) / decode_time
     acc, p, r, f = get_ner_fmeasure(gold_results, pred_results, data.tagScheme)
@@ -253,17 +262,14 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
     attr_start_labels = [sent[6] for sent in input_batch_list]
     attr_end_labels = [sent[7] for sent in input_batch_list]
     word_seq_lengths = torch.LongTensor(map(len, words))
-    max_seq_len = word_seq_lengths.max()
-    word_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
-    biword_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
-    label_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).long()
-    span_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(span_label_pad),
-                                              volatile=volatile_flag).long()
-    attr_start_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(attr_label_pad),
-                                                    volatile=volatile_flag).long()
-    attr_end_label_seq_tensor = autograd.Variable(torch.LongTensor(batch_size, max_seq_len).fill_(attr_label_pad),
-                                                  volatile=volatile_flag).long()
-    mask = autograd.Variable(torch.zeros((batch_size, max_seq_len)), volatile=volatile_flag).byte()
+    max_seq_len = word_seq_lengths.max().numpy()
+    word_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    biword_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    span_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    attr_start_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    attr_end_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
+    mask = torch.zeros((batch_size, max_seq_len), dtype=torch.uint8)
     for idx, (seq, biseq, label, seqlen) in enumerate(zip(words, biwords, labels, word_seq_lengths)):
         word_seq_tensor[idx, :seqlen] = torch.LongTensor(seq)
         biword_seq_tensor[idx, :seqlen] = torch.LongTensor(biseq)
@@ -271,7 +277,7 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
         span_label_seq_tensor[idx, :seqlen] = torch.LongTensor(span_labels)
         attr_start_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_start_labels)
         attr_end_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_end_labels)
-        mask[idx, :seqlen] = torch.Tensor([1] * seqlen)
+        mask[idx, :seqlen] = torch.ones((seqlen,), dtype=torch.uint8)   #torch.ByteTensor([1] * seqlen)
     word_seq_lengths, word_perm_idx = word_seq_lengths.sort(0, descending=True)
     word_seq_tensor = word_seq_tensor[word_perm_idx]
     biword_seq_tensor = biword_seq_tensor[word_perm_idx]
@@ -286,8 +292,7 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
     pad_chars = [chars[idx] + [[0]] * (max_seq_len - len(chars[idx])) for idx in range(len(chars))]
     length_list = [map(len, pad_char) for pad_char in pad_chars]
     max_word_len = max(map(max, length_list))
-    char_seq_tensor = autograd.Variable(torch.zeros((batch_size, max_seq_len, max_word_len)),
-                                        volatile=volatile_flag).long()
+    char_seq_tensor = torch.zeros((batch_size, max_seq_len, max_word_len), dtype=torch.long)
     char_seq_lengths = torch.LongTensor(length_list)
     for idx, (seq, seqlen) in enumerate(zip(pad_chars, char_seq_lengths)):
         for idy, (word, wordlen) in enumerate(zip(seq, seqlen)):
@@ -326,8 +331,10 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
     save_data_setting(data, save_dset_path)
     if new_tag_scheme:  # 使用多任务标注方案
         model = PleSeqModel(data)
+        model.to(device)
     else:
         model = SeqModel(data)
+        model.to(device)
     print "finished built model."
     loss_function = nn.NLLLoss()
     parameters = filter(lambda p: p.requires_grad, model.parameters())
@@ -365,9 +372,9 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
                 continue
             word_text = [[data.word_alphabet.get_instance(l) for l in sample[0]] for sample in instance]
             label_text = [[data.label_alphabet.get_instance(l).decode('utf8') for l in sample[4]] for sample in instance]
-            print("="*30, 'Gold')
-            print(word_text)
-            print(len(label_text[0]), label_text)
+            # print("="*30, 'Gold')
+            # print(word_text)
+            # print(len(label_text[0]), label_text)
             gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen, batch_charrecover, batch_label, mask, \
                 batch_span_label, batch_attr_start_label, batch_attr_end_label \
                 = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
@@ -404,8 +411,8 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             right, whole = predict_check(tag_seq, batch_label, mask)
             right_token += right
             whole_token += whole
-            sample_loss += loss.data[0]
-            total_loss += loss.data[0]
+            sample_loss += loss.item()
+            total_loss += loss.item()
             batch_loss += loss
 
             if end % 500 == 0:
@@ -525,6 +532,7 @@ if __name__ == '__main__':
 
     save_model_dir = args.savemodel
     gpu = torch.cuda.is_available()
+    device = torch.device("cuda" if gpu else "cpu")
     # if not os.path.exists('./data/ckpt'):
     #     os.makedirs('./data/ckpt')
     if not os.path.exists(save_model_dir):
@@ -569,14 +577,6 @@ if __name__ == '__main__':
         data.build_word_pretrain_emb(char_emb)
         data.build_biword_pretrain_emb(bichar_emb)
         data.build_gaz_pretrain_emb(gaz_file)
-        # span_labels, attr_start, attr_end = [ins[-3] for ins in data.train_Ids], [ins[-2] for ins in data.train_Ids], [ins[-1] for ins in data.train_Ids]
-        # print(span_labels[0])
-        # print(attr_start[0])
-        # print(attr_end[0])
-        # print(span_labels[1])
-        # print(attr_start[1])
-        # print(attr_end[1])
-        # exit(0)
         train(data, save_model_dir, dset_dir, seg, epochs=args.epochs, new_tag_scheme=args.new_tag_scheme)
     elif status == 'test':
         data = load_data_setting(dset_dir)
