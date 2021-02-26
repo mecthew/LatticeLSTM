@@ -38,7 +38,7 @@ class BiLSTM_CRF(nn.Module):
         span_loss = self.span_crf.neg_log_likelihood_loss(span_logits, mask, span_labels)
         scores, span_tag_seq = self.span_crf._viterbi_decode(span_logits, mask)
         attr_start_loss = self.attr_criterion(attr_start_logits.permute(0, 2, 1).unsqueeze(-1), attr_start_labels.unsqueeze(-1)).squeeze(-1) # B * S
-        attr_start_loss = torch.sum(attr_startss * mask.float(), dim=-1).float() / inputs_seq_len # B
+        attr_start_loss = torch.sum(attr_start_loss * mask.float(), dim=-1).float() / inputs_seq_len # B
         attr_end_loss = self.attr_criterion(attr_end_logits.permute(0, 2, 1).unsqueeze(-1), attr_end_labels.unsqueeze(-1)).squeeze(-1)  # B * S
         attr_end_loss = torch.sum(attr_end_loss * mask.float(), dim=-1).float() / inputs_seq_len # B
         attr_start_loss, attr_end_loss = attr_start_loss.mean(), attr_end_loss.mean()
