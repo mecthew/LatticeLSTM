@@ -98,13 +98,17 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
     attr_start_pred_tag = attr_start_pred.cpu().data.numpy()
     attr_end_pred_tag = attr_end_pred.cpu().data.numpy()
     pred_label = []
+    pred_label_text = []
     for idx in range(batch_size):
         attr_start_seq, attr_end_seq = attr_start_pred_tag[idx], attr_end_pred_tag[idx]
         _fake_words = ['null'] * attr_start_seq.shape[0]
         pairs = extract_kvpairs_by_start_end(attr_start_seq, attr_end_seq, _fake_words, attr_label_alphabet.get_index(ATTR_NULLKEY))
         ner_seqs = ['O'] * seq_len
+        print("attr start: {}, {}".format(attr_start_seq.shape[0], [attr_label_alphabet.get_instance(at) for at in attr_start_seq]))
+        print("pairs: {}".format(pairs))
+        print("="*50, 'END')
         for pair in pairs:
-            spos, epos, attr, _ = pair
+            (spos, epos), attr, _ = pair
             attr_name = attr_label_alphabet.get_instance(attr)
             if tagscheme == 'BMES':
                 if epos - spos == 1:
@@ -122,6 +126,7 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
             else:
                 raise ValueError('Unknown tagscheme: {}!'.format(tagscheme))
         pred_label.append([label_alphabet.get_index(_tag) for _tag in ner_seqs])
+        pred_label_text.append(ner_seqs)
     pred_variable = autograd.Variable(torch.LongTensor(pred_label), volatile=True)
     if gpu:
         pred_variable = pred_variable.cuda()
@@ -358,12 +363,18 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             instance = data.train_Ids[start:end]
             if not instance:
                 continue
+            word_text = [[data.word_alphabet.get_instance(l) for l in sample[0]] for sample in instance]
+            label_text = [[data.label_alphabet.get_instance(l).decode('utf8') for l in sample[4]] for sample in instance]
+            print("="*30, 'Gold')
+            print(word_text)
+            print(len(label_text[0]), label_text)
             gaz_list, batch_word, batch_biword, batch_wordlen, batch_wordrecover, batch_char, batch_charlen, batch_charrecover, batch_label, mask, \
                 batch_span_label, batch_attr_start_label, batch_attr_end_label \
                 = batchify_with_label(instance, data.HP_gpu, data.span_label_alphabet.get_index('O'),
                                       data.attr_label_alphabet.get_index(ATTR_NULLKEY))
             # print "gaz_list:",gaz_list
             # exit(0)
+
             instance_count += 1
             if new_tag_scheme:
                 loss, span_tag_seq, attr_start_output, attr_end_output \
@@ -558,6 +569,14 @@ if __name__ == '__main__':
         data.build_word_pretrain_emb(char_emb)
         data.build_biword_pretrain_emb(bichar_emb)
         data.build_gaz_pretrain_emb(gaz_file)
+        # span_labels, attr_start, attr_end = [ins[-3] for ins in data.train_Ids], [ins[-2] for ins in data.train_Ids], [ins[-1] for ins in data.train_Ids]
+        # print(span_labels[0])
+        # print(attr_start[0])
+        # print(attr_end[0])
+        # print(span_labels[1])
+        # print(attr_start[1])
+        # print(attr_end[1])
+        # exit(0)
         train(data, save_model_dir, dset_dir, seg, epochs=args.epochs, new_tag_scheme=args.new_tag_scheme)
     elif status == 'test':
         data = load_data_setting(dset_dir)
