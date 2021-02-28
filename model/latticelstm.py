@@ -173,7 +173,7 @@ class LatticeLSTM(nn.Module):
 
     """A module that runs multiple steps of LSTM."""
 
-    def __init__(self, input_dim, hidden_dim, word_drop, word_alphabet_size, word_emb_dim, pretrain_word_emb=None, left2right=True, fix_word_emb=True, gpu=True,  use_bias = True):
+    def __init__(self, input_dim, hidden_dim, word_drop, word_alphabet_size, word_emb_dim, pretrain_word_emb=None, left2right=True, fix_word_emb=True, gpu=True, use_bias=True):
         super(LatticeLSTM, self).__init__()
         skip_direction = "forward" if left2right else "backward"
         print("build LatticeLSTM... ", skip_direction, ", Fix emb:", fix_word_emb, " gaz drop:", word_drop)

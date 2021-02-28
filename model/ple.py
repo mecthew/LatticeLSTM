@@ -40,7 +40,7 @@ class PLE(nn.Module):
         self.layers_experts_shared_gate = nn.ModuleList()
         self.layers_experts_task1_gate = nn.ModuleList()
         self.layers_experts_task2_gate = nn.ModuleList()
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(dropout_rate)
         for i in range(experts_layers):
             # experts shared
             self.layers_experts_shared.append(nn.Linear(hidden_size, hidden_size * experts_num))        
@@ -106,8 +106,8 @@ class PLE(nn.Module):
         return gate_shared_output_final, gate_task1_output_final, gate_task2_output_final
 
 
-    def forward(self, input):
-        _, span_seqs_hiddens, attr_seqs_hiddens = self.progressive_layered_extraction(input, input, input)
+    def forward(self, span_hidden, attr_hidden):
+        _, span_seqs_hiddens, attr_seqs_hiddens = self.progressive_layered_extraction(span_hidden, attr_hidden, attr_hidden)
         # dropout layer
         span_seqs_hiddens = self.dropout(span_seqs_hiddens)
         attr_seqs_hiddens = self.dropout(attr_seqs_hiddens)

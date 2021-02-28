@@ -47,9 +47,11 @@ class BiLSTM(nn.Module):
         self.lstm_layer = data.HP_lstm_layer
         if data.pretrain_word_embedding is not None:
             self.word_embeddings.weight.data.copy_(torch.from_numpy(data.pretrain_word_embedding))
+            self.word_embeddings.weight.requires_grad_(True)
         else:
             self.word_embeddings.weight.data.copy_(
                 torch.from_numpy(self.random_embedding(data.word_alphabet.size(), self.embedding_dim)))
+            self.word_embeddings.weight.requires_grad_(True)
 
         if data.pretrain_biword_embedding is not None:
             self.biword_embeddings.weight.data.copy_(torch.from_numpy(data.pretrain_biword_embedding))

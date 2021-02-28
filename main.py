@@ -16,6 +16,7 @@ import os
 import random
 import sys
 import time
+import shutil
 
 import numpy as np
 import torch
@@ -130,7 +131,8 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
             else:
                 raise ValueError('Unknown tagscheme: {}!'.format(tagscheme))
         try:
-            pred_label.append([label_alphabet.get_index(_tag) for _tag in ner_seqs])
+            unknown_idx = label_alphabet.get_index('O')     # 因为_tag是根据attr生成，可能不在label_alphabet里
+            pred_label.append([label_alphabet.get_index(_tag) if _tag in label_alphabet.instances else unknown_idx for _tag in ner_seqs])
         except:
             # print("Error in {}".format(ner_seqs))
             print('Error')
@@ -338,9 +340,11 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
     print("finished built model.")
     loss_function = nn.NLLLoss()
     parameters = [p for p in model.parameters() if p.requires_grad]
-    optimizer = optim.SGD(parameters, lr=data.HP_lr, momentum=data.HP_momentum)
+    # optimizer = optim.SGD(parameters, lr=data.HP_lr, momentum=data.HP_momentum)
+    optimizer = optim.Adam(parameters, lr=1e-3, weight_decay=1e-5)
     best_dev = -1
     data.HP_iteration = epochs
+    best_model_name = None
     ## start training
     for idx in range(data.HP_iteration):
         epoch_start = time.time()
@@ -458,6 +462,7 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             model_name = save_model_dir + '.' + str(idx) + ".model"
             torch.save(model.state_dict(), model_name)
             best_dev = current_score
+            best_model_name = model_name
             # ## decode test
         speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
         test_finish = time.time()
@@ -468,6 +473,8 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
         else:
             print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
         gc.collect()
+    if best_model_name:
+        shutil.copy(best_model_name, save_model_dir.rsplit('/', maxsplit=1)[0] + '/best.model')
 
 
 def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False):
@@ -516,6 +523,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset')
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--new_tag_scheme', default=0, type=int)
+    parser.add_argument('--use_double_lstm', action='store_true')
     args = parser.parse_args()
 
     train_file = args.train
@@ -571,6 +579,7 @@ if __name__ == '__main__':
         data.gaz_dropout = 0.5
         data.norm_gaz_emb = False
         data.HP_fix_gaz_emb = False
+        data.use_double_lstm = args.use_double_lstm
         data_initialization(data, gaz_file, train_file, dev_file, test_file)
         data.generate_instance_with_gaz(train_file, 'train')
         data.generate_instance_with_gaz(dev_file, 'dev')
@@ -594,9 +603,11 @@ if __name__ == '__main__':
             gold_pair = extract_kvpairs_in_bmoes(gold_seq, word_seq)
             pred_pair = extract_kvpairs_in_bmoes(pred_seq, word_seq)
             case_result.append((''.join(word_seq), str(gold_pair), str(pred_pair)))
-            
+
         os.makedirs('./case_study', exist_ok=True)
-        case_fout = open('./case_study/{}_latticelstm.casestudy'.format(args.dataset), 'w')
+        case_output_path = './case_study/{}_latticelstm.casestudy'.format(args.dataset)
+        case_fout = open(case_output_path, 'w')
+        print("Saving case result to {}".format(case_output_path))
         for word_seq, gold_pair, pred_pair in case_result:
             case_fout.write(word_seq + '\n' + gold_pair + '\n' + pred_pair + '\n\n')
 
