@@ -106,8 +106,8 @@ class PLE(nn.Module):
         return gate_shared_output_final, gate_task1_output_final, gate_task2_output_final
 
 
-    def forward(self, span_hidden, attr_hidden):
-        _, span_seqs_hiddens, attr_seqs_hiddens = self.progressive_layered_extraction(span_hidden, attr_hidden, attr_hidden)
+    def forward(self, share_hidden, span_hidden, attr_hidden):
+        _, span_seqs_hiddens, attr_seqs_hiddens = self.progressive_layered_extraction(share_hidden, span_hidden, attr_hidden)
         # dropout layer
         span_seqs_hiddens = self.dropout(span_seqs_hiddens)
         attr_seqs_hiddens = self.dropout(attr_seqs_hiddens)

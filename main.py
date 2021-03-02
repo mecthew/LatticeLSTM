@@ -350,7 +350,7 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
         epoch_start = time.time()
         temp_start = epoch_start
         print(("Epoch: %s/%s" % (idx, data.HP_iteration)))
-        optimizer = lr_decay(optimizer, idx, data.HP_lr_decay, data.HP_lr)
+        # optimizer = lr_decay(optimizer, idx, data.HP_lr_decay, data.HP_lr)
         instance_count = 0
         sample_id = 0
         sample_loss = 0
@@ -474,7 +474,7 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
         gc.collect()
     if best_model_name:
-        shutil.copy(best_model_name, save_model_dir.rsplit('/', maxsplit=1)[0] + '/best.model')
+        shutil.copy(best_model_name, save_model_dir.rsplit('/', maxsplit=1)[0] + '/best_{}.model'.format(best_dev))
 
 
 def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False):
@@ -523,7 +523,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset')
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--new_tag_scheme', default=0, type=int)
-    parser.add_argument('--use_double_lstm', action='store_true')
+    parser.add_argument('--latticelstm_num', default=1, type=int, help="主要用在判断是否使用多个latticelstm输出作为ple输入")
     args = parser.parse_args()
 
     train_file = args.train
@@ -566,6 +566,7 @@ if __name__ == '__main__':
     print("Char emb:", char_emb)
     print("Bichar emb:", bichar_emb)
     print("Gaz file:", gaz_file)
+    print("Latticelstm num:", args.latticelstm_num)
     if status == 'train':
         print("Model saved to:", save_model_dir)
     sys.stdout.flush()
@@ -579,7 +580,7 @@ if __name__ == '__main__':
         data.gaz_dropout = 0.5
         data.norm_gaz_emb = False
         data.HP_fix_gaz_emb = False
-        data.use_double_lstm = args.use_double_lstm
+        data.latticelstm_num = args.latticelstm_num
         data_initialization(data, gaz_file, train_file, dev_file, test_file)
         data.generate_instance_with_gaz(train_file, 'train')
         data.generate_instance_with_gaz(dev_file, 'dev')
