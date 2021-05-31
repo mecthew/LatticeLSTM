@@ -20,7 +20,7 @@ PADDING = "</pad>"
 NULLKEY = "-null-"
 
 class Data:
-    def __init__(self, new_tag_scheme):
+    def __init__(self, new_tag_scheme, dataset):
         self.MAX_SENTENCE_LENGTH = 250
         self.MAX_WORD_LENGTH = -1
         self.number_normalized = True
@@ -87,10 +87,12 @@ class Data:
         # modify start
         self.span_label_alphabet = Alphabet('span_label', True)
         self.attr_label_alphabet = Alphabet('attr_label', True)
+
         self.span_label_size = 0
         self.attr_label_size = 0
         # modify end
         self.new_tag_scheme = new_tag_scheme
+        self.dataset = dataset
         
     def show_data_summary(self):
         print("DATA SUMMARY START:")

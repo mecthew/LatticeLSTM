@@ -347,9 +347,10 @@ def load_pretrain_emb(embedding_path):
     embedd_dim = -1
     embedd_dict = dict()
     with open(embedding_path, 'r') as file:
-        for line in file:
+        for ith, line in enumerate(file):
             line = line.strip()
-            if len(line) == 0:
+            # skip the first line without embedding
+            if ith == 0 or len(line) == 0:
                 continue
             tokens = line.split()
             if embedd_dim < 0:

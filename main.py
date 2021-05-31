@@ -17,6 +17,7 @@ import random
 import sys
 import time
 import shutil
+import datetime
 
 import numpy as np
 import torch
@@ -31,6 +32,7 @@ from utils.data import Data
 from utils.extract_entity import extract_kvpairs_in_bmoes
 from utils.extract_entity import extract_kvpairs_by_start_end
 from utils.metric import get_ner_fmeasure
+from utils.logger import get_logger
 
 seed_num = 100
 random.seed(seed_num)
@@ -115,6 +117,8 @@ def convert_attr_seq_to_ner_seq(attr_start_pred, attr_end_pred, label_alphabet, 
         for pair in pairs:
             (spos, epos), attr, _ = pair
             attr_name = attr_label_alphabet.get_instance(attr)
+            if attr_name is None:
+                continue
             if tagscheme == 'BMES':
                 if epos - spos == 1:
                     ner_seqs[spos] = 'S-' + attr_name
@@ -271,7 +275,7 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
     span_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
     attr_start_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
     attr_end_label_seq_tensor = torch.zeros((batch_size, max_seq_len), dtype=torch.long)
-    mask = torch.zeros((batch_size, max_seq_len), dtype=torch.uint8)
+    mask = torch.zeros((batch_size, max_seq_len), dtype=torch.bool)
     for idx, (seq, biseq, label, seqlen) in enumerate(zip(words, biwords, labels, word_seq_lengths)):
         word_seq_tensor[idx, :seqlen] = torch.LongTensor(seq)
         biword_seq_tensor[idx, :seqlen] = torch.LongTensor(biseq)
@@ -279,7 +283,7 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
         span_label_seq_tensor[idx, :seqlen] = torch.LongTensor(span_labels)
         attr_start_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_start_labels)
         attr_end_label_seq_tensor[idx, :seqlen] = torch.LongTensor(attr_end_labels)
-        mask[idx, :seqlen] = torch.ones((seqlen,), dtype=torch.uint8)   #torch.ByteTensor([1] * seqlen)
+        mask[idx, :seqlen] = torch.ones((seqlen,), dtype=torch.bool)  #torch.ByteTensor([1] * seqlen)
     word_seq_lengths, word_perm_idx = word_seq_lengths.sort(0, descending=True)
     word_seq_tensor = word_seq_tensor[word_perm_idx]
     biword_seq_tensor = biword_seq_tensor[word_perm_idx]
@@ -450,31 +454,41 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             current_score = f
             print(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
                 dev_cost, speed, acc, p, r, f)))
+            logger.info(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+                dev_cost, speed, acc, p, r, f)))
         else:
             current_score = acc
             print(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
+            logger.info(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
 
+        is_best_model = False
         if current_score > best_dev:
             if seg:
                 print("Exceed previous best f score:", best_dev)
             else:
                 print("Exceed previous best acc score:", best_dev)
-            model_name = save_model_dir + '.' + str(idx) + ".model"
+            model_name = save_model_dir + '/latticelstm' + str(idx) + ".model"
             torch.save(model.state_dict(), model_name)
             best_dev = current_score
             best_model_name = model_name
+            is_best_model = True
             # ## decode test
-        speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
-        test_finish = time.time()
-        test_cost = test_finish - dev_finish
-        if seg:
-            print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
-                test_cost, speed, acc, p, r, f)))
-        else:
-            print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
+        if args.dataset != 'msra':
+            speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
+            test_finish = time.time()
+            test_cost = test_finish - dev_finish
+            logger.info("Is best model: {}".format(is_best_model))
+            if seg:
+                print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+                    test_cost, speed, acc, p, r, f)))
+                logger.info(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+                    test_cost, speed, acc, p, r, f)))
+            else:
+                print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
+                logger.info(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
         gc.collect()
     if best_model_name:
-        shutil.copy(best_model_name, save_model_dir.rsplit('/', maxsplit=1)[0] + '/best_{}.model'.format(best_dev))
+        shutil.copy(best_model_name, save_model_dir + '/best.model')
 
 
 def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False):
@@ -501,8 +515,11 @@ def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False
     if seg:
         print(("%s: time:%.2fs, speed:%.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
             name, time_cost, speed, acc, p, r, f)))
+        logger.info(("%s: time:%.2fs, speed:%.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+            name, time_cost, speed, acc, p, r, f)))
     else:
         print(("%s: time:%.2fs, speed:%.2fst/s; acc: %.4f" % (name, time_cost, speed, acc)))
+        logger.info(("%s: time:%.2fs, speed:%.2fst/s; acc: %.4f" % (name, time_cost, speed, acc)))
     return pred_results
 
 
@@ -510,7 +527,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tuning with bi-directional LSTM-CRF')
     parser.add_argument('--embedding', help='Embedding for words', default='None')
     parser.add_argument('--status', choices=['train', 'test', 'decode'], help='update algorithm', default='train')
-    parser.add_argument('--savemodel', default="data/model/saved_model.lstmcrf.")
+    # parser.add_argument('--savemodel', default="output/model/saved_model.lstmcrf.")
     parser.add_argument('--savedset', help='Dir of saved data setting')
     parser.add_argument('--train', default="data/conll03/train.bmes")
     parser.add_argument('--dev', default="data/conll03/dev.bmes")
@@ -524,14 +541,24 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--new_tag_scheme', default=0, type=int)
     parser.add_argument('--latticelstm_num', default=1, type=int, help="主要用在判断是否使用多个latticelstm输出作为ple输入")
+    parser.add_argument('--char_emb', type=str, default="data/gigaword_chn.all.a2b.uni.11k.50d.vec")
+    parser.add_argument('--gaz_file', type=str, default="data/ctb.704k.50d.vec")
+
     args = parser.parse_args()
+    log_dir = f'./output/logs/{args.dataset}/tagscheme{args.new_tag_scheme}'
+    os.makedirs(log_dir, exist_ok=True)
+    logger = get_logger(sys.argv, log_dir + '/{}'.format(datetime.datetime.now().strftime('%y-%m-%d-%H-%M-%S')))
+    logger.info('Arguments:')
+    for arg in vars(args):
+        logger.info('{}: {}'.format(arg, getattr(args, arg)))
 
     train_file = args.train
     dev_file = args.dev
     test_file = args.test
     raw_file = args.raw
-    load_model_dir = args.loadmodel
-    dset_dir = args.savedset if args.savedset else "data/{}.dset".format(args.dataset)
+    load_model_path = args.loadmodel if args.loadmodel else f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}/best.model'
+    dset_dir = args.savedset if args.savedset else "data/{}/{}.dset".format(args.dataset, args.dataset)
+    # os.makedirs(dset_dir, exist_ok=True)
     output_file = args.output
     if args.seg.lower() == "true":
         seg = True
@@ -539,7 +566,7 @@ if __name__ == '__main__':
         seg = False
     status = args.status.lower()
 
-    save_model_dir = args.savemodel
+    save_model_dir = f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}'
     gpu = torch.cuda.is_available()
     device = torch.device("cuda" if gpu else "cpu")
     # if not os.path.exists('./data/ckpt'):
@@ -547,9 +574,9 @@ if __name__ == '__main__':
     if not os.path.exists(save_model_dir):
         os.makedirs(save_model_dir)
 
-    char_emb = "data/gigaword_chn.all.a2b.uni.11k.50d.vec"
+    char_emb = args.char_emb
     bichar_emb = None
-    gaz_file = "data/ctb.704k.50d.vec"
+    gaz_file = args.gaz_file
     # gaz_file = None
     # char_emb = None
     # bichar_emb = None
@@ -572,7 +599,7 @@ if __name__ == '__main__':
     sys.stdout.flush()
 
     if status == 'train':
-        data = Data(args.new_tag_scheme)
+        data = Data(args.new_tag_scheme, args.dataset)
         data.HP_gpu = gpu
         data.HP_use_char = False
         data.HP_batch_size = 1
@@ -594,7 +621,7 @@ if __name__ == '__main__':
         # data.generate_instance_with_gaz(dev_file, 'dev')
         # load_model_decode(model_dir, data, 'dev', gpu, seg)
         data.generate_instance_with_gaz(test_file, 'test')
-        test_preds = load_model_decode(load_model_dir, data, 'test', gpu, seg, new_tag_scheme=args.new_tag_scheme)
+        test_preds = load_model_decode(load_model_path, data, 'test', gpu, seg, new_tag_scheme=args.new_tag_scheme)
         test_texts = data.test_texts
         words = [instance[0] for instance in test_texts]
         labels = [instance[4] for instance in test_texts]
@@ -606,16 +633,17 @@ if __name__ == '__main__':
             case_result.append((''.join(word_seq), str(gold_pair), str(pred_pair)))
 
         os.makedirs('./case_study', exist_ok=True)
-        case_output_path = './case_study/{}_latticelstm.casestudy'.format(args.dataset)
+        case_output_path = './case_study/latticelstm_{}_scheme{}.casestudy'.format(args.dataset, args.new_tag_scheme)
         case_fout = open(case_output_path, 'w')
         print("Saving case result to {}".format(case_output_path))
+        logger.info("Saving case result to {}".format(case_output_path))
         for word_seq, gold_pair, pred_pair in case_result:
             case_fout.write(word_seq + '\n' + gold_pair + '\n' + pred_pair + '\n\n')
 
     elif status == 'decode':
         data = load_data_setting(dset_dir)
         data.generate_instance_with_gaz(raw_file, 'raw')
-        decode_results = load_model_decode(load_model_dir, data, 'raw', gpu, seg)
+        decode_results = load_model_decode(load_model_path, data, 'raw', gpu, seg)
         data.write_decoded_results(output_file, decode_results, 'raw')
     else:
         print("Invalid argument! Please use valid arguments! (train/test/decode)")

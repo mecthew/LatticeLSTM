@@ -28,7 +28,8 @@ class BiLSTM_CRF(nn.Module):
             self.lstm_list.append(BiLSTM(data))
         self.span_crf = CRF(span_label_size, self.gpu)
         self.ple = PLE(hidden_size=data.HP_hidden_dim, span_label_size=data.span_label_size,
-                       attr_label_size=data.attr_label_size, dropout_rate=0.3, experts_layers=2, experts_num=2)
+                       attr_label_size=data.attr_label_size, dropout_rate=0.3, experts_layers=2,
+                       experts_num=1, ple_dropout=0.1)
         # ce loss
         weight = torch.FloatTensor(
             [1.0 if i != data.attr_label_alphabet.get_index('') else 0.1 for i in range(data.attr_label_size)])

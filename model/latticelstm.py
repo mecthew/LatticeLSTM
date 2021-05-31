@@ -34,13 +34,14 @@ class WordLSTMCell(nn.Module):
         """
         Initialize parameters following the way proposed in the paper.
         """
-        init.orthogonal_(self.weight_ih.data)
-        weight_hh_data = torch.eye(self.hidden_size)
-        weight_hh_data = weight_hh_data.repeat(1, 3)
-        self.weight_hh.data.set_(weight_hh_data)
-        # The bias is just set to zero vectors.
-        if self.use_bias:
-            init.constant_(self.bias.data, val=0)
+        with torch.no_grad():
+            init.orthogonal_(self.weight_ih.data)
+            weight_hh_data = torch.eye(self.hidden_size)
+            weight_hh_data = weight_hh_data.repeat(1, 3)
+            self.weight_hh.set_(weight_hh_data)
+            # The bias is just set to zero vectors.
+            if self.use_bias:
+                init.constant_(self.bias.data, val=0)
 
     def forward(self, input_, hx):
         """
@@ -101,21 +102,23 @@ class MultiInputLSTMCell(nn.Module):
         """
         Initialize parameters following the way proposed in the paper.
         """
-        init.orthogonal_(self.weight_ih.data)
-        init.orthogonal_(self.alpha_weight_ih.data)
+        with torch.no_grad():
+            init.orthogonal_(self.weight_ih.data)
+            init.orthogonal_(self.alpha_weight_ih.data)
 
-        weight_hh_data = torch.eye(self.hidden_size)
-        weight_hh_data = weight_hh_data.repeat(1, 3)
-        self.weight_hh.data.set_(weight_hh_data)
+            weight_hh_data = torch.eye(self.hidden_size)
+            weight_hh_data = weight_hh_data.repeat(1, 3)
 
-        alpha_weight_hh_data = torch.eye(self.hidden_size)
-        alpha_weight_hh_data = alpha_weight_hh_data.repeat(1, 1)
-        self.alpha_weight_hh.data.set_(alpha_weight_hh_data)
+            self.weight_hh.set_(weight_hh_data)
 
-        # The bias is just set to zero vectors.
-        if self.use_bias:
-            init.constant_(self.bias.data, val=0)
-            init.constant_(self.alpha_bias.data, val=0)
+            alpha_weight_hh_data = torch.eye(self.hidden_size)
+            alpha_weight_hh_data = alpha_weight_hh_data.repeat(1, 1)
+            self.alpha_weight_hh.set_(alpha_weight_hh_data)
+
+            # The bias is just set to zero vectors.
+            if self.use_bias:
+                init.constant_(self.bias.data, val=0)
+                init.constant_(self.alpha_bias.data, val=0)
 
     def forward(self, input_, c_input, hx):
         """
