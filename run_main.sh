@@ -1,14 +1,19 @@
 dataset=$1
-if [ $1 == demo -o $1 == weibo -o $1 == resume ]; then
+if [ $1 == demo -o $1 == resume ]; then
   train_file=./data/$dataset/train.char.bmoes
   dev_file=./data/$dataset/dev.char.bmoes
   test_file=./data/$dataset/test.char.bmoes
   eps=20
+elif [  $1 == weibo ]; then
+  train_file=./data/$dataset/train.char.bmoes
+  dev_file=./data/$dataset/dev.char.bmoes
+  test_file=./data/$dataset/test.char.bmoes
+  eps=40
 elif [ $1 == ontonotes4 ]; then
   train_file=./data/$dataset/train.char.clip256.bmoes
   dev_file=./data/$dataset/dev.char.clip256.bmoes
   test_file=./data/$dataset/test.char.clip256.bmoes
-  eps=10
+  eps=30
 else
   train_file=./data/$dataset/train.char.clip256.bmoes
   dev_file=./data/$dataset/test.char.clip256.bmoes
@@ -23,9 +28,9 @@ python main.py --status $2 \
     --dataset $dataset \
     --char_emb /home/qiumengchuan/NLP/corpus/embedding/chinese/lexicon/gigaword_chn.all.a2b.uni.11k.50d.vec \
     --gaz_file /home/qiumengchuan/NLP/corpus/embedding/chinese/lexicon/ctb.704k.50d.vec \
-		--train ./data/$dataset/train.char.bmoes \
-		--dev ./data/$dataset/dev.char.bmoes \
-		--test ./data/$dataset/test.char.bmoes \
+		--train $train_file\
+		--dev $dev_file \
+		--test $test_file \
 		--loadmodel ./output/ckpt/$dataset/best_.model \
 		--epochs $eps \
 		--new_tag_scheme $3

@@ -13,7 +13,7 @@ import math
 
 class PLE(nn.Module):
     def __init__(self, hidden_size, span_label_size, attr_label_size, dropout_rate=0.3, experts_layers=2, experts_num=1,
-                 pactivation='gelu', ple_dropout=0.1, use_ff=False):
+                 pactivation='gelu', ple_dropout=0.1, use_ff=False, use_ple_lstm=False):
         """
         Args:
             sequence_encoder (nn.Module): encoder of sequence
@@ -33,8 +33,11 @@ class PLE(nn.Module):
         self.mlp_span = nn.Linear(hidden_size, span_label_size)
         self.mlp_attr_start = nn.Linear(hidden_size, attr_label_size)
         self.mlp_attr_end = nn.Linear(hidden_size, attr_label_size)
-        self.span_bilstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, num_layers=1, bidirectional=True)
-        self.attr_bilstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, num_layers=1, bidirectional=True)
+        if use_ple_lstm:
+            self.span_bilstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, num_layers=1, bidirectional=True)
+            self.attr_bilstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, num_layers=1, bidirectional=True)
+        else:
+            self.span_bilstm, self.attr_bilstm = None, None
         self.experts_layers = experts_layers
         self.experts_num = experts_num
         self.selector_num = 2
@@ -53,11 +56,16 @@ class PLE(nn.Module):
 
     def forward(self, share_hidden, span_hidden, attr_hidden):
         share_rep = share_hidden
-        span_rep, _ = self.span_bilstm(span_hidden)
-        span_rep = torch.add(*torch.chunk(span_rep, 2, dim=-1))
-        attr_rep, _ = self.attr_bilstm(attr_hidden)
-        attr_rep = torch.add(*torch.chunk(attr_rep, 2, dim=-1))
-
+        if self.span_bilstm is None:
+            span_rep = span_hidden
+        else:
+            span_rep, _ = self.span_bilstm(span_hidden)
+            span_rep = torch.add(*torch.chunk(span_rep, 2, dim=-1))
+        if self.attr_bilstm is None:
+            attr_rep = attr_hidden
+        else:
+            attr_rep, _ = self.attr_bilstm(attr_hidden)
+            attr_rep = torch.add(*torch.chunk(attr_rep, 2, dim=-1))
         _, span_seqs_hiddens, attr_seqs_hiddens = self.progressive_layered_extraction(share_rep, span_rep, attr_rep)
         # dropout layer
         span_seqs_hiddens = self.dropout(span_seqs_hiddens)

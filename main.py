@@ -331,12 +331,12 @@ def batchify_with_label(input_batch_list, gpu, span_label_pad, attr_label_pad, v
            span_label_seq_tensor, attr_start_label_seq_tensor, attr_end_label_seq_tensor
 
 
-def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_scheme=False):
+def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=100, new_tag_scheme=False):
     print("Training model...")
     data.show_data_summary()
     save_data_setting(data, save_dset_path)
     if new_tag_scheme:  # 使用多任务标注方案
-        model = PleSeqModel(data)
+        model = PleSeqModel(data, use_ple_lstm=use_ple_lstm)
         model.to(device)
     else:
         model = SeqModel(data)
@@ -452,14 +452,8 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
 
         if seg:
             current_score = f
-            print(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
-                dev_cost, speed, acc, p, r, f)))
-            logger.info(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
-                dev_cost, speed, acc, p, r, f)))
         else:
             current_score = acc
-            print(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
-            logger.info(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
 
         is_best_model = False
         if current_score > best_dev:
@@ -473,11 +467,22 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
             best_model_name = model_name
             is_best_model = True
             # ## decode test
+        logger.info("Is best model: {}".format(is_best_model))
+        print("Is best model: {}".format(is_best_model))
+        if seg:
+            print(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+                dev_cost, speed, acc, p, r, f)))
+            logger.info(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
+                dev_cost, speed, acc, p, r, f)))
+        else:
+            print(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
+            logger.info(("Dev: time: %.2fs speed: %.2fst/s; acc: %.4f" % (dev_cost, speed, acc)))
+
         if args.dataset != 'msra':
             speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
             test_finish = time.time()
             test_cost = test_finish - dev_finish
-            logger.info("Is best model: {}".format(is_best_model))
+
             if seg:
                 print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
                     test_cost, speed, acc, p, r, f)))
@@ -491,11 +496,11 @@ def train(data, save_model_dir, save_dset_path, seg=True, epochs=100, new_tag_sc
         shutil.copy(best_model_name, save_model_dir + '/best.model')
 
 
-def load_model_decode(model_dir, data, name, gpu, seg=True, new_tag_scheme=False):
+def load_model_decode(model_dir, data, name, gpu, seg=True, use_ple_lstm=False, new_tag_scheme=False):
     data.HP_gpu = gpu
     print("Load Model from file: ", model_dir)
     if new_tag_scheme:
-        model = PleSeqModel(data)
+        model = PleSeqModel(data, use_ple_lstm)
     else:
         model = SeqModel(data)
     ## load model need consider if the model trained in GPU and load in CPU, or vice versa
@@ -543,11 +548,12 @@ if __name__ == '__main__':
     parser.add_argument('--latticelstm_num', default=1, type=int, help="主要用在判断是否使用多个latticelstm输出作为ple输入")
     parser.add_argument('--char_emb', type=str, default="data/gigaword_chn.all.a2b.uni.11k.50d.vec")
     parser.add_argument('--gaz_file', type=str, default="data/ctb.704k.50d.vec")
+    parser.add_argument('--use_ple_lstm', action='store_true')
 
     args = parser.parse_args()
     log_dir = f'./output/logs/{args.dataset}/tagscheme{args.new_tag_scheme}'
     os.makedirs(log_dir, exist_ok=True)
-    logger = get_logger(sys.argv, log_dir + '/{}'.format(datetime.datetime.now().strftime('%y-%m-%d-%H-%M-%S')))
+    logger = get_logger(sys.argv, log_dir + '/{}.log'.format(datetime.datetime.now().strftime('%y-%m-%d-%H-%M-%S')))
     logger.info('Arguments:')
     for arg in vars(args):
         logger.info('{}: {}'.format(arg, getattr(args, arg)))
@@ -594,6 +600,7 @@ if __name__ == '__main__':
     print("Bichar emb:", bichar_emb)
     print("Gaz file:", gaz_file)
     print("Latticelstm num:", args.latticelstm_num)
+    print("Use PLE lstm:", args.use_ple_lstm)
     if status == 'train':
         print("Model saved to:", save_model_dir)
     sys.stdout.flush()
@@ -615,13 +622,13 @@ if __name__ == '__main__':
         data.build_word_pretrain_emb(char_emb)
         data.build_biword_pretrain_emb(bichar_emb)
         data.build_gaz_pretrain_emb(gaz_file)
-        train(data, save_model_dir, dset_dir, seg, epochs=args.epochs, new_tag_scheme=args.new_tag_scheme)
+        train(data, save_model_dir, dset_dir, use_ple_lstm=args.use_ple_lstm, seg=seg, epochs=args.epochs, new_tag_scheme=args.new_tag_scheme)
     elif status == 'test':
         data = load_data_setting(dset_dir)
         # data.generate_instance_with_gaz(dev_file, 'dev')
         # load_model_decode(model_dir, data, 'dev', gpu, seg)
         data.generate_instance_with_gaz(test_file, 'test')
-        test_preds = load_model_decode(load_model_path, data, 'test', gpu, seg, new_tag_scheme=args.new_tag_scheme)
+        test_preds = load_model_decode(load_model_path, data, 'test', gpu, seg, args.use_ple_lstm, args.new_tag_scheme)
         test_texts = data.test_texts
         words = [instance[0] for instance in test_texts]
         labels = [instance[4] for instance in test_texts]
@@ -643,7 +650,7 @@ if __name__ == '__main__':
     elif status == 'decode':
         data = load_data_setting(dset_dir)
         data.generate_instance_with_gaz(raw_file, 'raw')
-        decode_results = load_model_decode(load_model_path, data, 'raw', gpu, seg)
+        decode_results = load_model_decode(load_model_path, data, 'raw', gpu, seg, args.use_ple_lstm, args.new_tag_scheme)
         data.write_decoded_results(output_file, decode_results, 'raw')
     else:
         print("Invalid argument! Please use valid arguments! (train/test/decode)")

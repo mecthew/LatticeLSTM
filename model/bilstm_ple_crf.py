@@ -13,7 +13,7 @@ from .ple import PLE
 
 
 class BiLSTM_CRF(nn.Module):
-    def __init__(self, data):
+    def __init__(self, data, use_ple_lstm):
         super(BiLSTM_CRF, self).__init__()
         print("build batched lstmcrf...")
         self.gpu = data.HP_gpu
@@ -29,7 +29,7 @@ class BiLSTM_CRF(nn.Module):
         self.span_crf = CRF(span_label_size, self.gpu)
         self.ple = PLE(hidden_size=data.HP_hidden_dim, span_label_size=data.span_label_size,
                        attr_label_size=data.attr_label_size, dropout_rate=0.3, experts_layers=2,
-                       experts_num=1, ple_dropout=0.1)
+                       experts_num=1, ple_dropout=0.1, use_ple_lstm=use_ple_lstm)
         # ce loss
         weight = torch.FloatTensor(
             [1.0 if i != data.attr_label_alphabet.get_index('') else 0.1 for i in range(data.attr_label_size)])
