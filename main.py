@@ -494,6 +494,7 @@ def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=1
         gc.collect()
     if best_model_name:
         shutil.copy(best_model_name, save_model_dir + '/best.model')
+        logger.info(f"copy {best_model_name} as best model")
 
 
 def load_model_decode(model_dir, data, name, gpu, seg=True, use_ple_lstm=False, new_tag_scheme=False):
@@ -545,13 +546,14 @@ if __name__ == '__main__':
     parser.add_argument('--dataset')
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--new_tag_scheme', default=0, type=int)
-    parser.add_argument('--latticelstm_num', default=1, type=int, help="主要用在判断是否使用多个latticelstm输出作为ple输入")
+    parser.add_argument('--latticelstm_num', default=1, type=int, choices=[1, 3], help="主要用在判断是否使用多个latticelstm输出作为ple输入")
     parser.add_argument('--char_emb', type=str, default="data/gigaword_chn.all.a2b.uni.11k.50d.vec")
     parser.add_argument('--gaz_file', type=str, default="data/ctb.704k.50d.vec")
     parser.add_argument('--use_ple_lstm', action='store_true')
+    parser.add_argument('--max_len', default=250, type=int)
 
     args = parser.parse_args()
-    log_dir = f'./output/logs/{args.dataset}/tagscheme{args.new_tag_scheme}'
+    log_dir = f'./output/logs/{args.dataset}/tagscheme{args.new_tag_scheme}_plstm{int(args.use_ple_lstm)}_lattice{args.latticelstm_num}'
     os.makedirs(log_dir, exist_ok=True)
     logger = get_logger(sys.argv, log_dir + '/{}.log'.format(datetime.datetime.now().strftime('%y-%m-%d-%H-%M-%S')))
     logger.info('Arguments:')
@@ -562,7 +564,7 @@ if __name__ == '__main__':
     dev_file = args.dev
     test_file = args.test
     raw_file = args.raw
-    load_model_path = args.loadmodel if args.loadmodel else f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}/best.model'
+    load_model_path = args.loadmodel if args.loadmodel else f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}_plstm{int(args.use_ple_lstm)}_lattice{args.latticelstm_num}/best.model'
     dset_dir = args.savedset if args.savedset else "data/{}/{}.dset".format(args.dataset, args.dataset)
     # os.makedirs(dset_dir, exist_ok=True)
     output_file = args.output
@@ -572,7 +574,7 @@ if __name__ == '__main__':
         seg = False
     status = args.status.lower()
 
-    save_model_dir = f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}'
+    save_model_dir = f'./output/ckpt/{args.dataset}/tagscheme{args.new_tag_scheme}_plstm{int(args.use_ple_lstm)}_lattice{args.latticelstm_num}'
     gpu = torch.cuda.is_available()
     device = torch.device("cuda" if gpu else "cpu")
     # if not os.path.exists('./data/ckpt'):
@@ -601,12 +603,13 @@ if __name__ == '__main__':
     print("Gaz file:", gaz_file)
     print("Latticelstm num:", args.latticelstm_num)
     print("Use PLE lstm:", args.use_ple_lstm)
+    print('max_len', args.max_len)
     if status == 'train':
         print("Model saved to:", save_model_dir)
     sys.stdout.flush()
 
     if status == 'train':
-        data = Data(args.new_tag_scheme, args.dataset)
+        data = Data(args.new_tag_scheme, args.dataset, args.max_len)
         data.HP_gpu = gpu
         data.HP_use_char = False
         data.HP_batch_size = 1

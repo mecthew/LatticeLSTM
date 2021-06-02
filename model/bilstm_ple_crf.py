@@ -69,8 +69,8 @@ class BiLSTM_CRF(nn.Module):
             encoder_hiddens.append(hidden)
         if self.latticelstm_num == 1:
             encoder_hiddens = encoder_hiddens * 3   # 重复三次
-        elif self.latticelstm_num == 2:
-            encoder_hiddens = encoder_hiddens + [encoder_hiddens[-1]]   # 重复最后一个
+        # elif self.latticelstm_num == 2:
+        #     encoder_hiddens = [encoder_hiddens[0]] + encoder_hiddens   # 重复第一个
         span_logits, attr_start_logits, attr_end_logits = self.ple(*encoder_hiddens)
         return span_logits, attr_start_logits, attr_end_logits
 

@@ -20,8 +20,8 @@ PADDING = "</pad>"
 NULLKEY = "-null-"
 
 class Data:
-    def __init__(self, new_tag_scheme, dataset):
-        self.MAX_SENTENCE_LENGTH = 250
+    def __init__(self, new_tag_scheme, dataset, max_len):
+        self.MAX_SENTENCE_LENGTH = max_len
         self.MAX_WORD_LENGTH = -1
         self.number_normalized = True
         self.norm_word_emb = True

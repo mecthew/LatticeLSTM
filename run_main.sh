@@ -1,24 +1,34 @@
 dataset=$1
-if [ $1 == demo -o $1 == resume ]; then
+if [ $1 == resume ]; then
   train_file=./data/$dataset/train.char.bmoes
   dev_file=./data/$dataset/dev.char.bmoes
   test_file=./data/$dataset/test.char.bmoes
-  eps=20
-elif [  $1 == weibo ]; then
+  eps=50
+  max_len=200
+elif [ $1 == weibo ]; then
   train_file=./data/$dataset/train.char.bmoes
   dev_file=./data/$dataset/dev.char.bmoes
   test_file=./data/$dataset/test.char.bmoes
-  eps=40
+  eps=50
+  max_len=200
 elif [ $1 == ontonotes4 ]; then
   train_file=./data/$dataset/train.char.clip256.bmoes
   dev_file=./data/$dataset/dev.char.clip256.bmoes
   test_file=./data/$dataset/test.char.clip256.bmoes
-  eps=30
-else
+  eps=50
+  max_len=250
+elif [ $1 == msra ]; then
   train_file=./data/$dataset/train.char.clip256.bmoes
   dev_file=./data/$dataset/test.char.clip256.bmoes
   test_file=./data/$dataset/test.char.clip256.bmoes
-  eps=10
+  eps=50
+  max_len=250
+else
+  train_file=./data/$dataset/train.char.bmoes
+  dev_file=./data/$dataset/dev.char.bmoes
+  test_file=./data/$dataset/test.char.bmoes
+  eps=1
+  max_len=200
 fi
 
 echo "dataset=$dataset, eps=$eps"
@@ -31,9 +41,11 @@ python main.py --status $2 \
 		--train $train_file\
 		--dev $dev_file \
 		--test $test_file \
-		--loadmodel ./output/ckpt/$dataset/best_.model \
+		--loadmodel ./output/ckpt/$dataset/tagscheme$3/best.model \
 		--epochs $eps \
-		--new_tag_scheme $3
+		--max_len $max_len \
+		--new_tag_scheme $3 \
+		--latticelstm_num 3
 
 # python main.py --status decode \
 # 		--raw ../data/onto4ner.cn/test.char.bmes \
