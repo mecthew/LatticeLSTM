@@ -350,6 +350,7 @@ def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=1
     data.HP_iteration = epochs
     best_model_name = None
     ## start training
+    best_test_prf1 = (0, 0, 0)
     for idx in range(data.HP_iteration):
         epoch_start = time.time()
         temp_start = epoch_start
@@ -467,7 +468,7 @@ def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=1
             best_model_name = model_name
             is_best_model = True
             # ## decode test
-        logger.info("Is best model: {}".format(is_best_model))
+        logger.info("Epoch{}, Is best model: {}".format(idx, is_best_model))
         print("Is best model: {}".format(is_best_model))
         if seg:
             print(("Dev: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
@@ -482,7 +483,6 @@ def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=1
             speed, acc, p, r, f, _ = evaluate(data, model, "test", new_tag_scheme)
             test_finish = time.time()
             test_cost = test_finish - dev_finish
-
             if seg:
                 print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f, p: %.4f, r: %.4f, f: %.4f" % (
                     test_cost, speed, acc, p, r, f)))
@@ -491,10 +491,13 @@ def train(data, save_model_dir, save_dset_path, use_ple_lstm, seg=True, epochs=1
             else:
                 print(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
                 logger.info(("Test: time: %.2fs, speed: %.2fst/s; acc: %.4f" % (test_cost, speed, acc)))
+        if is_best_model and seg:
+            best_test_prf1 = (p, r, f)
         gc.collect()
     if best_model_name:
         shutil.copy(best_model_name, save_model_dir + '/best.model')
         logger.info(f"copy {best_model_name} as best model")
+        logger.info("Test results: p: %.4f, r: %.4f, f1: %.4f" % (best_test_prf1[0], best_test_prf1[1], best_test_prf1[2]))
 
 
 def load_model_decode(model_dir, data, name, gpu, seg=True, use_ple_lstm=False, new_tag_scheme=False):

@@ -44,7 +44,7 @@ class BiLSTM_CRF(nn.Module):
                                                                        word_seq_lengths, char_inputs, char_seq_lengths,
                                                                        char_seq_recover)
         inputs_seq_len = mask.sum(dim=-1).float()
-        span_loss = self.span_crf.neg_log_likelihood_loss(span_logits, mask, span_labels)
+        span_loss = (self.span_crf.neg_log_likelihood_loss(span_logits, mask, span_labels) / inputs_seq_len).mean()
         scores, span_tag_seq = self.span_crf._viterbi_decode(span_logits, mask)
         attr_start_loss = self.attr_criterion(attr_start_logits.permute(0, 2, 1), attr_start_labels)  # B * S
         attr_start_loss = torch.sum(attr_start_loss * mask.float(), dim=-1).float() / inputs_seq_len  # B

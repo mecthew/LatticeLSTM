@@ -45,8 +45,7 @@ python main.py --status $2 \
 		--epochs $eps \
 		--max_len $max_len \
 		--new_tag_scheme $3 \
-		--latticelstm_num 3
-
+		--latticelstm_num 1
 # python main.py --status decode \
 # 		--raw ../data/onto4ner.cn/test.char.bmes \
 # 		--savedset ../data/onto4ner.cn/saved_model \
